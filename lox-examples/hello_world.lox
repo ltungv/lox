@@ -1,0 +1,4 @@
+fun hello_world() {
+  // This print hello world
+  print "Hello, world!";
+}
