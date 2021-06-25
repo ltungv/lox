@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"strconv"
+	"strings"
 	"unicode"
 
 	gloxErrors "github.com/letung3105/lox/glox/errors"
@@ -112,7 +113,10 @@ func (scanner *Scanner) Scan() []*token.Token {
 			}
 		}
 	}
-	scanner.addToken(token.EOF, nil)
+	scanner.tokens = append(
+		scanner.tokens,
+		token.New(token.EOF, "", nil, scanner.current),
+	)
 	return scanner.tokens
 }
 
@@ -166,9 +170,9 @@ func (scanner *Scanner) scanIdentifier() {
 	for isAlphanumeric(scanner.peek()) {
 		scanner.advance()
 	}
-	lexeme := string(scanner.source[scanner.start:scanner.current])
-	if _, isKeyword := token.Keywords[lexeme]; isKeyword {
-		scanner.addToken(token.Type(lexeme), nil)
+	lexemeUpper := strings.ToUpper(string(scanner.source[scanner.start:scanner.current]))
+	if _, isKeyword := token.Keywords[lexemeUpper]; isKeyword {
+		scanner.addToken(token.Type(strings.ToUpper(lexemeUpper)), nil)
 	} else {
 		scanner.addToken(token.IDENTIFIER, nil)
 	}

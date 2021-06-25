@@ -48,46 +48,46 @@ const (
 	LESS_EQUAL    Type = "<="
 
 	// Literals
-	IDENTIFIER Type = "identifier"
-	STRING     Type = "string"
-	NUMBER     Type = "number"
+	IDENTIFIER Type = "IDENTIFIER"
+	STRING     Type = "STRING"
+	NUMBER     Type = "NUMBER"
 
 	// Keywords
-	AND    Type = "and"
-	CLASS  Type = "class"
-	ELSE   Type = "else"
-	FALSE  Type = "false"
-	FUN    Type = "fun"
-	FOR    Type = "for"
-	IF     Type = "if"
-	NIL    Type = "nil"
-	OR     Type = "or"
-	PRINT  Type = "print"
-	RETURN Type = "return"
-	SUPER  Type = "super"
-	THIS   Type = "this"
-	TRUE   Type = "true"
-	VAR    Type = "var"
-	WHILE  Type = "while"
-	EOF    Type = "eof"
+	AND    Type = "AND"
+	CLASS  Type = "CLASS"
+	ELSE   Type = "ELSE"
+	FALSE  Type = "FALSE"
+	FUN    Type = "FUN"
+	FOR    Type = "FOR"
+	IF     Type = "IF"
+	NIL    Type = "NIL"
+	OR     Type = "OR"
+	PRINT  Type = "PRINT"
+	RETURN Type = "RETURN"
+	SUPER  Type = "SUPER"
+	THIS   Type = "THIS"
+	TRUE   Type = "TRUE"
+	VAR    Type = "VAR"
+	WHILE  Type = "WHILE"
+	EOF    Type = "EOF"
 )
 
 var Keywords = map[string]interface{}{
-	"and":    struct{}{},
-	"class":  struct{}{},
-	"else":   struct{}{},
-	"false":  struct{}{},
-	"fun":    struct{}{},
-	"for":    struct{}{},
-	"if":     struct{}{},
-	"nil":    struct{}{},
-	"or":     struct{}{},
-	"print":  struct{}{},
-	"return": struct{}{},
-	"super":  struct{}{},
-	"this":   struct{}{},
-	"true":   struct{}{},
-	"var":    struct{}{},
-	"while":  struct{}{},
-	"eof":    struct{}{},
+	"AND":    struct{}{},
+	"CLASS":  struct{}{},
+	"ELSE":   struct{}{},
+	"FALSE":  struct{}{},
+	"FUN":    struct{}{},
+	"FOR":    struct{}{},
+	"IF":     struct{}{},
+	"NIL":    struct{}{},
+	"OR":     struct{}{},
+	"PRINT":  struct{}{},
+	"RETURN": struct{}{},
+	"SUPER":  struct{}{},
+	"THIS":   struct{}{},
+	"TRUE":   struct{}{},
+	"VAR":    struct{}{},
+	"WHILE":  struct{}{},
+	"EOF":    struct{}{},
 }

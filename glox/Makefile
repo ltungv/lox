@@ -1,3 +1,5 @@
+default: fmt run
+
 run:
 	go run ./
 
