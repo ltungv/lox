@@ -7,28 +7,39 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+
+	gloxErrors "github.com/letung3105/lox/glox/errors"
+	"github.com/letung3105/lox/glox/scanner"
 )
 
 func main() {
-	if len(os.Args) > 1 {
+	args := os.Args[1:]
+	if len(args) > 1 {
 		fmt.Println("Usage: glox [script]")
 		os.Exit(64)
 	}
 
-	var err error
-	if len(os.Args) != 1 {
-		err = runPrompt()
+	reporter := gloxErrors.NewSimpleReporter(os.Stdout)
+	if len(args) != 1 {
+		runPrompt(reporter)
 	} else {
-		err = runFile(os.Args[0])
+		runFile(args[0], reporter)
 	}
 
-	if err != nil {
-		panic(err)
+	if reporter.HadError() {
+		os.Exit(65)
+	}
+}
+
+func run(script string, reporter gloxErrors.Reporter) {
+	sc := scanner.New([]rune(script), reporter)
+	for _, tok := range sc.Scan() {
+		fmt.Println(tok)
 	}
 }
 
 // Run the interpreter in REPL mode
-func runPrompt() error {
+func runPrompt(reporter gloxErrors.Reporter) {
 	s := bufio.NewScanner(os.Stdin)
 	s.Split(bufio.ScanLines)
 	for {
@@ -36,24 +47,19 @@ func runPrompt() error {
 		if !s.Scan() {
 			break
 		}
-		if err := run(s.Text()); err != nil {
-			return err
-		}
+		run(s.Text(), reporter)
 	}
-
-	return nil
+	if err := s.Err(); err != nil {
+		reporter.Report(err)
+	}
 }
 
 // Run the given file as script
-func runFile(fpath string) error {
+func runFile(fpath string, reporter gloxErrors.Reporter) {
 	bytes, err := ioutil.ReadFile(fpath)
 	if err != nil {
-		return err
+		reporter.Report(err)
+		return
 	}
-
-	return run(string(bytes))
-}
-
-func run(script string) error {
-	return nil
+	run(string(bytes), reporter)
 }
