@@ -92,6 +92,26 @@ func (scanner *Scanner) Scan() []*token.Token {
 				for scanner.peek() != '\n' && scanner.hasNext() {
 					scanner.advance()
 				}
+			} else if scanner.match('*') {
+				for {
+					for scanner.peek() != '*' && scanner.hasNext() {
+						scanner.advance()
+					}
+					if scanner.hasNext() {
+						scanner.advance()
+						if scanner.peek() == '/' {
+							scanner.advance()
+							break
+						}
+					} else {
+						scanner.reporter.Report(
+							gloxErrors.NewGloxError(
+								scanner.line, "", "Unterminated multiline comment.",
+							),
+						)
+						break
+					}
+				}
 			} else {
 				scanner.addToken(token.SLASH, nil)
 			}
@@ -104,12 +124,9 @@ func (scanner *Scanner) Scan() []*token.Token {
 			} else if unicode.IsLetter(r) {
 				scanner.scanIdentifier()
 			} else {
-				err := gloxErrors.NewGloxError(
-					scanner.line,
-					"",
-					"Unexpected character.",
+				scanner.reporter.Report(
+					gloxErrors.NewGloxError(scanner.line, "", "Unexpected character."),
 				)
-				scanner.reporter.Report(err)
 			}
 		}
 	}
@@ -136,8 +153,9 @@ func (scanner *Scanner) scanString() {
 		literal := string(scanner.source[scanner.start+1 : scanner.current-1])
 		scanner.addToken(token.STRING, literal)
 	} else {
-		err := gloxErrors.NewGloxError(scanner.line, "", "Unterminated string.")
-		scanner.reporter.Report(err)
+		scanner.reporter.Report(
+			gloxErrors.NewGloxError(scanner.line, "", "Unterminated string."),
+		)
 	}
 }
 
@@ -154,11 +172,9 @@ func (scanner *Scanner) scanNumber() {
 			scanner.advance()
 		}
 	}
-	// conver to literal
-	literal, err := strconv.ParseFloat(
-		string(scanner.source[scanner.start:scanner.current]),
-		64,
-	)
+	lexeme := string(scanner.source[scanner.start:scanner.current])
+	// conver to double
+	literal, err := strconv.ParseFloat(lexeme, 64)
 	if err != nil {
 		// NOTE: This should not happen
 		panic(err)
