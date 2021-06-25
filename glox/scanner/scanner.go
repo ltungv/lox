@@ -95,6 +95,9 @@ func (scanner *Scanner) Scan() []*token.Token {
 			} else if scanner.match('*') {
 				for {
 					for scanner.peek() != '*' && scanner.hasNext() {
+						if scanner.peek() == '\n' {
+							scanner.line++
+						}
 						scanner.advance()
 					}
 					if scanner.hasNext() {
