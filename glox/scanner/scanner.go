@@ -93,28 +93,7 @@ func (scanner *Scanner) Scan() []*token.Token {
 					scanner.advance()
 				}
 			} else if scanner.match('*') {
-				for {
-					for scanner.peek() != '*' && scanner.hasNext() {
-						if scanner.peek() == '\n' {
-							scanner.line++
-						}
-						scanner.advance()
-					}
-					if scanner.hasNext() {
-						scanner.advance()
-						if scanner.peek() == '/' {
-							scanner.advance()
-							break
-						}
-					} else {
-						scanner.reporter.Report(
-							gloxErrors.NewGloxError(
-								scanner.line, "", "Unterminated multiline comment.",
-							),
-						)
-						break
-					}
-				}
+				scanner.scanMultilineComment()
 			} else {
 				scanner.addToken(token.SLASH, nil)
 			}
@@ -124,7 +103,7 @@ func (scanner *Scanner) Scan() []*token.Token {
 		default:
 			if unicode.IsDigit(r) {
 				scanner.scanNumber()
-			} else if unicode.IsLetter(r) {
+			} else if isBeginIdent(r) {
 				scanner.scanIdentifier()
 			} else {
 				scanner.reporter.Report(
@@ -197,6 +176,31 @@ func (scanner *Scanner) scanIdentifier() {
 	}
 }
 
+func (scanner *Scanner) scanMultilineComment() {
+	for {
+		for scanner.peek() != '*' && scanner.hasNext() {
+			if scanner.peek() == '\n' {
+				scanner.line++
+			}
+			scanner.advance()
+		}
+		if scanner.hasNext() {
+			scanner.advance()
+			if scanner.peek() == '/' {
+				scanner.advance()
+				break
+			}
+		} else {
+			scanner.reporter.Report(
+				gloxErrors.NewGloxError(
+					scanner.line, "", "Unterminated multiline comment.",
+				),
+			)
+			break
+		}
+	}
+}
+
 // addToken appends the lexeme from `start` to `current` as a token of the given
 // type and carries the given literal
 func (scanner *Scanner) addToken(typ token.Type, literal interface{}) {
@@ -248,4 +252,8 @@ func (scanner *Scanner) peekNext() rune {
 
 func isAlphanumeric(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func isBeginIdent(r rune) bool {
+	return unicode.IsLetter(r) || r == '_'
 }
