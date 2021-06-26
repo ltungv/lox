@@ -28,15 +28,11 @@ func main() {
 }
 
 func defineAst(outputDir string, baseName string, types []string) {
-	if err := os.MkdirAll(outputDir, 0777); err != nil {
-		panic(err)
-	}
-
 	fpath := filepath.Join(
 		outputDir,
 		fmt.Sprintf("%s.go", strings.ToLower(baseName)),
 	)
-	f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY, 0777)
+	f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}

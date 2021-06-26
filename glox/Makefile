@@ -15,4 +15,4 @@ fmt:
 	go fmt -x ./internal/lox/ast_codegen
 
 ast_codegen:
-	go run ./internal/lox/ast_codegen ./internal/lox/
+	go run ./internal/cmd/ast_codegen ./internal/lox/
