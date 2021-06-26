@@ -104,7 +104,7 @@ func (scanner *Scanner) Scan() []*Token {
 				scanner.scanIdentifier()
 			} else {
 				scanner.reporter.Report(
-					NewGloxError(scanner.line, "", "Unexpected character."),
+					NewGloxError(scanner.line, "Unexpected character."),
 				)
 			}
 		}
@@ -133,7 +133,7 @@ func (scanner *Scanner) scanString() {
 		scanner.addToken(STRING, literal)
 	} else {
 		scanner.reporter.Report(
-			NewGloxError(scanner.line, "", "Unterminated string."),
+			NewGloxError(scanner.line, "Unterminated string."),
 		)
 	}
 }
@@ -190,7 +190,7 @@ func (scanner *Scanner) scanMultilineComment() {
 		} else {
 			scanner.reporter.Report(
 				NewGloxError(
-					scanner.line, "", "Unterminated multiline comment.",
+					scanner.line, "Unterminated multiline comment.",
 				),
 			)
 			break

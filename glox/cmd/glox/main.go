@@ -32,9 +32,16 @@ func main() {
 
 func run(script string, reporter lox.Reporter) {
 	sc := lox.NewScanner([]rune(script), reporter)
-	for _, tok := range sc.Scan() {
-		fmt.Println(tok)
-	}
+  tokens := sc.Scan()
+  parser := lox.NewParser(tokens)
+  expr, err := parser.Parse()
+  if err != nil {
+    reporter.Report(err)
+    return
+  }
+
+	printer := lox.AstPrinter{}
+	fmt.Println(printer.Print(expr))
 }
 
 // Run the interpreter in REPL mode
