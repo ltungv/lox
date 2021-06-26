@@ -166,8 +166,8 @@ func (scanner *Scanner) scanIdentifier() {
 		scanner.advance()
 	}
 	lexemeUpper := strings.ToUpper(string(scanner.source[scanner.start:scanner.current]))
-	if _, isKeyword := Keywords[lexemeUpper]; isKeyword {
-		scanner.addToken(TokenType(strings.ToUpper(lexemeUpper)), nil)
+	if tokenType, isKeyword := Keywords[lexemeUpper]; isKeyword {
+		scanner.addToken(tokenType, nil)
 	} else {
 		scanner.addToken(IDENTIFIER, nil)
 	}
