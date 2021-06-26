@@ -53,7 +53,7 @@ func defineAst(outputDir string, baseName string, types []string) {
 
 	// Interface for Expr in AST
 	fmt.Fprintf(writer, "type %s interface {\n", baseName)
-	fmt.Fprintf(writer, "\tAccept(%sVisitor visitor) interface{}\n", baseName)
+	fmt.Fprintf(writer, "\tAccept(visitor %sVisitor) interface{}\n", baseName)
 	fmt.Fprintf(writer, "}\n")
 
 	defineVisitor(writer, baseName, types)
@@ -102,25 +102,31 @@ func defineType(
 	fmt.Fprintf(writer, "}\n")
 
 	// Constructor
-	fmt.Fprintf(writer, "func New%s%s(%s) {\n", typeName, baseName, fieldList)
-  var fieldNames []string
+	fmt.Fprintf(
+		writer,
+		"func New%s%s(%s) %s%s {\n",
+		typeName, baseName,
+		fieldList,
+		typeName, baseName,
+	)
+	var fieldNames []string
 	for _, f := range strings.Split(fieldList, ",") {
 		field := strings.TrimSpace(f)
 		fieldName := strings.TrimSpace(strings.Split(field, " ")[0])
-    fieldNames = append(fieldNames, fieldName)
+		fieldNames = append(fieldNames, fieldName)
 	}
 	fmt.Fprintf(
-    writer, 
-    "\treturn %s%s{%s}\n", 
-    typeName, baseName, 
-    strings.Join(fieldNames, ","),
-  )
+		writer,
+		"\treturn %s%s{%s}\n",
+		typeName, baseName,
+		strings.Join(fieldNames, ","),
+	)
 	fmt.Fprintf(writer, "}\n")
 
 	// Accept method
 	fmt.Fprintf(
 		writer,
-		"func (%s *%s%s) Accept(visitor *%sVisitor) interface{} {\n",
+		"func (%s *%s%s) Accept(visitor %sVisitor) interface{} {\n",
 		strings.ToLower(baseName),
 		typeName, baseName,
 		baseName,
