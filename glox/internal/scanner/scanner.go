@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode"
 
-	gloxErrors "github.com/letung3105/lox/glox/errors"
-	"github.com/letung3105/lox/glox/token"
+	gloxErrors "github.com/letung3105/lox/glox/internal/errors"
+	"github.com/letung3105/lox/glox/internal/token"
 )
 
 // Scanner parses the input source and collects all the tokens that can be found

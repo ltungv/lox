@@ -1,16 +1,19 @@
 default: fmt run
 
-run:
-	go run ./
+run: codegen
+	go run ./cmd/glox
 
-build:
+build: codegen
 	rm -rf ./target/
 	mkdir target
-	go build -o ./target/ ./
+	go build -o ./target/ ./cmd/glox
 
-fmt:
-	go fmt -x ./
-	go fmt -x ./errors
-	go fmt -x ./scanner
-	go fmt -x ./token
+fmt: codegen
+	go fmt -x ./cmd/glox
+	go fmt -x ./internal/codegen
+	go fmt -x ./internal/errors
+	go fmt -x ./internal/scanner
+	go fmt -x ./internal/token
 
+codegen:
+	go run ./internal/codegen

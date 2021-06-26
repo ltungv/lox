@@ -8,8 +8,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	gloxErrors "github.com/letung3105/lox/glox/errors"
-	"github.com/letung3105/lox/glox/scanner"
+	gloxErrors "github.com/letung3105/lox/glox/internal/errors"
+	"github.com/letung3105/lox/glox/internal/scanner"
 )
 
 func main() {
