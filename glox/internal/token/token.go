@@ -5,10 +5,10 @@ import "fmt"
 // Token represents group a characters with additional information that was
 // obtained during the scanning phase.
 type Token struct {
-	typ     Type
-	lexeme  string
-	literal interface{}
-	line    int
+	Typ     Type
+	Lexeme  string
+	Literal interface{}
+	Line    int
 }
 
 // New creates a new token
