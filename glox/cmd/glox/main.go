@@ -8,8 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	gloxErrors "github.com/letung3105/lox/glox/internal/errors"
-	"github.com/letung3105/lox/glox/internal/scanner"
+	"github.com/letung3105/lox/glox/internal/lox"
 )
 
 func main() {
@@ -19,7 +18,7 @@ func main() {
 		os.Exit(64)
 	}
 
-	reporter := gloxErrors.NewSimpleReporter(os.Stdout)
+	reporter := lox.NewSimpleReporter(os.Stdout)
 	if len(args) != 1 {
 		runPrompt(reporter)
 	} else {
@@ -31,15 +30,15 @@ func main() {
 	}
 }
 
-func run(script string, reporter gloxErrors.Reporter) {
-	sc := scanner.New([]rune(script), reporter)
+func run(script string, reporter lox.Reporter) {
+	sc := lox.NewScanner([]rune(script), reporter)
 	for _, tok := range sc.Scan() {
 		fmt.Println(tok)
 	}
 }
 
 // Run the interpreter in REPL mode
-func runPrompt(reporter gloxErrors.Reporter) {
+func runPrompt(reporter lox.Reporter) {
 	s := bufio.NewScanner(os.Stdin)
 	s.Split(bufio.ScanLines)
 	for {
@@ -55,7 +54,7 @@ func runPrompt(reporter gloxErrors.Reporter) {
 }
 
 // Run the given file as script
-func runFile(fpath string, reporter gloxErrors.Reporter) {
+func runFile(fpath string, reporter lox.Reporter) {
 	bytes, err := ioutil.ReadFile(fpath)
 	if err != nil {
 		reporter.Report(err)

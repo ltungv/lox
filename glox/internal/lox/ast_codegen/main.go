@@ -104,7 +104,7 @@ func defineType(
 	// Constructor
 	fmt.Fprintf(
 		writer,
-		"func New%s%s(%s) %s%s {\n",
+		"func New%s%s(%s) *%s%s {\n",
 		typeName, baseName,
 		fieldList,
 		typeName, baseName,
@@ -117,7 +117,7 @@ func defineType(
 	}
 	fmt.Fprintf(
 		writer,
-		"\treturn %s%s{%s}\n",
+		"\treturn &%s%s{%s}\n",
 		typeName, baseName,
 		strings.Join(fieldNames, ","),
 	)

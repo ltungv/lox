@@ -1,4 +1,4 @@
-package ast
+package lox
 type Expr interface {
 	Accept(visitor ExprVisitor) interface{}
 }
@@ -13,8 +13,8 @@ type BinaryExpr struct {
 	Left Expr
 	Right Expr
 }
-func NewBinaryExpr(Op *Token, Left Expr, Right Expr) BinaryExpr {
-	return BinaryExpr{Op,Left,Right}
+func NewBinaryExpr(Op *Token, Left Expr, Right Expr) *BinaryExpr {
+	return &BinaryExpr{Op,Left,Right}
 }
 func (expr *BinaryExpr) Accept(visitor ExprVisitor) interface{} {
 	return visitor.VisitBinaryExpr(expr)
@@ -22,8 +22,8 @@ func (expr *BinaryExpr) Accept(visitor ExprVisitor) interface{} {
 type GroupingExpr struct {
 	Expression Expr
 }
-func NewGroupingExpr(Expression Expr) GroupingExpr {
-	return GroupingExpr{Expression}
+func NewGroupingExpr(Expression Expr) *GroupingExpr {
+	return &GroupingExpr{Expression}
 }
 func (expr *GroupingExpr) Accept(visitor ExprVisitor) interface{} {
 	return visitor.VisitGroupingExpr(expr)
@@ -31,8 +31,8 @@ func (expr *GroupingExpr) Accept(visitor ExprVisitor) interface{} {
 type LiteralExpr struct {
 	Value interface{}
 }
-func NewLiteralExpr(Value interface{}) LiteralExpr {
-	return LiteralExpr{Value}
+func NewLiteralExpr(Value interface{}) *LiteralExpr {
+	return &LiteralExpr{Value}
 }
 func (expr *LiteralExpr) Accept(visitor ExprVisitor) interface{} {
 	return visitor.VisitLiteralExpr(expr)
@@ -41,8 +41,8 @@ type UnaryExpr struct {
 	Op *Token
 	Expression Expr
 }
-func NewUnaryExpr(Op *Token, Expression Expr) UnaryExpr {
-	return UnaryExpr{Op,Expression}
+func NewUnaryExpr(Op *Token, Expression Expr) *UnaryExpr {
+	return &UnaryExpr{Op,Expression}
 }
 func (expr *UnaryExpr) Accept(visitor ExprVisitor) interface{} {
 	return visitor.VisitUnaryExpr(expr)

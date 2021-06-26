@@ -10,10 +10,9 @@ build:
 
 fmt:
 	go fmt -x ./cmd/glox
-	go fmt -x ./internal/ast_codegen
-	go fmt -x ./internal/errors
-	go fmt -x ./internal/scanner
-	go fmt -x ./internal/token
+	go fmt -x ./cmd/ast_printer
+	go fmt -x ./internal/lox
+	go fmt -x ./internal/lox/ast_codegen
 
 ast_codegen:
-	go run ./internal/ast_codegen ./internal/ast/
+	go run ./internal/lox/ast_codegen ./internal/lox/

@@ -1,12 +1,9 @@
-package scanner
+package lox
 
 import (
 	"strconv"
 	"strings"
 	"unicode"
-
-	gloxErrors "github.com/letung3105/lox/glox/internal/errors"
-	"github.com/letung3105/lox/glox/internal/token"
 )
 
 // Scanner parses the input source and collects all the tokens that can be found
@@ -15,18 +12,18 @@ type Scanner struct {
 	start    int
 	current  int
 	source   []rune
-	tokens   []*token.Token
-	reporter gloxErrors.Reporter
+	tokens   []*Token
+	reporter Reporter
 }
 
 // New creates a new Lox token scanner
-func New(source []rune, reporter gloxErrors.Reporter) *Scanner {
-	return &Scanner{1, 0, 0, source, make([]*token.Token, 0), reporter}
+func NewScanner(source []rune, reporter Reporter) *Scanner {
+	return &Scanner{1, 0, 0, source, make([]*Token, 0), reporter}
 }
 
 // Scan reads the source and collect all the tokens that were found from the
 // source
-func (scanner *Scanner) Scan() []*token.Token {
+func (scanner *Scanner) Scan() []*Token {
 	if len(scanner.tokens) != 0 {
 		return scanner.tokens
 	}
@@ -40,49 +37,49 @@ func (scanner *Scanner) Scan() []*token.Token {
 			scanner.line++
 		// Single character tokens
 		case '(':
-			scanner.addToken(token.LEFT_PAREN, nil)
+			scanner.addToken(LEFT_PAREN, nil)
 		case ')':
-			scanner.addToken(token.RIGHT_PAREN, nil)
+			scanner.addToken(RIGHT_PAREN, nil)
 		case '{':
-			scanner.addToken(token.LEFT_BRACE, nil)
+			scanner.addToken(LEFT_BRACE, nil)
 		case '}':
-			scanner.addToken(token.RIGHT_BRACE, nil)
+			scanner.addToken(RIGHT_BRACE, nil)
 		case ',':
-			scanner.addToken(token.COMMA, nil)
+			scanner.addToken(COMMA, nil)
 		case '.':
-			scanner.addToken(token.DOT, nil)
+			scanner.addToken(DOT, nil)
 		case '-':
-			scanner.addToken(token.MINUS, nil)
+			scanner.addToken(MINUS, nil)
 		case '+':
-			scanner.addToken(token.PLUS, nil)
+			scanner.addToken(PLUS, nil)
 		case ';':
-			scanner.addToken(token.SEMICOLON, nil)
+			scanner.addToken(SEMICOLON, nil)
 		case '*':
-			scanner.addToken(token.STAR, nil)
+			scanner.addToken(STAR, nil)
 		// Double character tokens
 		case '!':
 			if scanner.match('=') {
-				scanner.addToken(token.BANG_EQUAL, nil)
+				scanner.addToken(BANG_EQUAL, nil)
 			} else {
-				scanner.addToken(token.BANG, nil)
+				scanner.addToken(BANG, nil)
 			}
 		case '=':
 			if scanner.match('=') {
-				scanner.addToken(token.EQUAL_EQUAL, nil)
+				scanner.addToken(EQUAL_EQUAL, nil)
 			} else {
-				scanner.addToken(token.EQUAL, nil)
+				scanner.addToken(EQUAL, nil)
 			}
 		case '<':
 			if scanner.match('=') {
-				scanner.addToken(token.LESS_EQUAL, nil)
+				scanner.addToken(LESS_EQUAL, nil)
 			} else {
-				scanner.addToken(token.LESS, nil)
+				scanner.addToken(LESS, nil)
 			}
 		case '>':
 			if scanner.match('=') {
-				scanner.addToken(token.GREATER_EQUAL, nil)
+				scanner.addToken(GREATER_EQUAL, nil)
 			} else {
-				scanner.addToken(token.GREATER, nil)
+				scanner.addToken(GREATER, nil)
 			}
 		// Long lexemes
 		case '/':
@@ -95,7 +92,7 @@ func (scanner *Scanner) Scan() []*token.Token {
 			} else if scanner.match('*') {
 				scanner.scanMultilineComment()
 			} else {
-				scanner.addToken(token.SLASH, nil)
+				scanner.addToken(SLASH, nil)
 			}
 		// Literals
 		case '"':
@@ -107,14 +104,14 @@ func (scanner *Scanner) Scan() []*token.Token {
 				scanner.scanIdentifier()
 			} else {
 				scanner.reporter.Report(
-					gloxErrors.NewGloxError(scanner.line, "", "Unexpected character."),
+					NewGloxError(scanner.line, "", "Unexpected character."),
 				)
 			}
 		}
 	}
 	scanner.tokens = append(
 		scanner.tokens,
-		token.New(token.EOF, "", nil, scanner.current),
+		NewToken(EOF, "", nil, scanner.current),
 	)
 	return scanner.tokens
 }
@@ -133,10 +130,10 @@ func (scanner *Scanner) scanString() {
 		scanner.advance()
 		// content between '"' pair
 		literal := string(scanner.source[scanner.start+1 : scanner.current-1])
-		scanner.addToken(token.STRING, literal)
+		scanner.addToken(STRING, literal)
 	} else {
 		scanner.reporter.Report(
-			gloxErrors.NewGloxError(scanner.line, "", "Unterminated string."),
+			NewGloxError(scanner.line, "", "Unterminated string."),
 		)
 	}
 }
@@ -161,7 +158,7 @@ func (scanner *Scanner) scanNumber() {
 		// NOTE: This should not happen
 		panic(err)
 	}
-	scanner.addToken(token.NUMBER, literal)
+	scanner.addToken(NUMBER, literal)
 }
 
 func (scanner *Scanner) scanIdentifier() {
@@ -169,10 +166,10 @@ func (scanner *Scanner) scanIdentifier() {
 		scanner.advance()
 	}
 	lexemeUpper := strings.ToUpper(string(scanner.source[scanner.start:scanner.current]))
-	if _, isKeyword := token.Keywords[lexemeUpper]; isKeyword {
-		scanner.addToken(token.Type(strings.ToUpper(lexemeUpper)), nil)
+	if _, isKeyword := Keywords[lexemeUpper]; isKeyword {
+		scanner.addToken(TokenType(strings.ToUpper(lexemeUpper)), nil)
 	} else {
-		scanner.addToken(token.IDENTIFIER, nil)
+		scanner.addToken(IDENTIFIER, nil)
 	}
 }
 
@@ -192,7 +189,7 @@ func (scanner *Scanner) scanMultilineComment() {
 			}
 		} else {
 			scanner.reporter.Report(
-				gloxErrors.NewGloxError(
+				NewGloxError(
 					scanner.line, "", "Unterminated multiline comment.",
 				),
 			)
@@ -203,9 +200,9 @@ func (scanner *Scanner) scanMultilineComment() {
 
 // addToken appends the lexeme from `start` to `current` as a token of the given
 // type and carries the given literal
-func (scanner *Scanner) addToken(typ token.Type, literal interface{}) {
+func (scanner *Scanner) addToken(typ TokenType, literal interface{}) {
 	lexeme := string(scanner.source[scanner.start:scanner.current])
-	tok := token.New(typ, lexeme, literal, scanner.line)
+	tok := NewToken(typ, lexeme, literal, scanner.line)
 	scanner.tokens = append(scanner.tokens, tok)
 }
 
