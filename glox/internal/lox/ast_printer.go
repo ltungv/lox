@@ -31,4 +31,3 @@ func (printer *AstPrinter) VisitLiteralExpr(expr *LiteralExpr) interface{} {
 func (printer *AstPrinter) VisitUnaryExpr(expr *UnaryExpr) interface{} {
 	return fmt.Sprintf("(%s %s)", expr.Op.Lexeme, expr.Expression.Accept(printer))
 }
-

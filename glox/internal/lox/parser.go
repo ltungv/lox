@@ -13,17 +13,17 @@ package lox
 // unary      --> ( "!" | "-" ) unary | primary ;
 // primary    --> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 type Parser struct {
-	current  int
-	tokens   []*Token
+	current int
+	tokens  []*Token
 }
 
 // NewParse creates a new parse for the Lox language
-func NewParser(tokens []*Token ) *Parser {
+func NewParser(tokens []*Token) *Parser {
 	return &Parser{0, tokens}
 }
 
 func (parser *Parser) Parse() (Expr, error) {
-  return parser.expression()
+	return parser.expression()
 }
 
 // expression --> equality ;
@@ -71,15 +71,15 @@ func (parser *Parser) comparison() (Expr, error) {
 // term --> factor ( ( "-" | "+" ) factor )* ;
 func (parser *Parser) term() (Expr, error) {
 	expr, err := parser.factor()
-  if err != nil {
-    return nil, err
-  }
+	if err != nil {
+		return nil, err
+	}
 	for parser.match(MINUS, PLUS) {
 		op := parser.prev()
-    right, err := parser.factor()
-    if err != nil {
-      return nil, err
-    }
+		right, err := parser.factor()
+		if err != nil {
+			return nil, err
+		}
 		expr = NewBinaryExpr(op, expr, right)
 	}
 	return expr, nil
@@ -88,15 +88,15 @@ func (parser *Parser) term() (Expr, error) {
 // factor --> unary ( ( "/" | "*" ) unary )* ;
 func (parser *Parser) factor() (Expr, error) {
 	expr, err := parser.unary()
-  if err != nil {
-    return nil, err
-  }
+	if err != nil {
+		return nil, err
+	}
 	for parser.match(SLASH, STAR) {
 		op := parser.prev()
-    right, err := parser.unary()
-    if err != nil {
-      return nil, err
-    }
+		right, err := parser.unary()
+		if err != nil {
+			return nil, err
+		}
 		expr = NewBinaryExpr(op, expr, right)
 	}
 	return expr, nil
@@ -106,10 +106,10 @@ func (parser *Parser) factor() (Expr, error) {
 func (parser *Parser) unary() (Expr, error) {
 	if parser.match(BANG, MINUS) {
 		op := parser.prev()
-    expr, err := parser.unary()
-    if err != nil {
-      return nil, err
-    }
+		expr, err := parser.unary()
+		if err != nil {
+			return nil, err
+		}
 		return NewUnaryExpr(op, expr), nil
 	}
 	return parser.primary()
@@ -131,15 +131,15 @@ func (parser *Parser) primary() (Expr, error) {
 	}
 	if parser.match(LEFT_PAREN) {
 		expr, err := parser.expression()
-    if err != nil {
-      return nil, err
-    }
-    if err := parser.consume(RIGHT_PAREN, "Expect ')' after expression"); err != nil {
-      return nil, err
-    }
+		if err != nil {
+			return nil, err
+		}
+		if err := parser.consume(RIGHT_PAREN, "Expect ')' after expression"); err != nil {
+			return nil, err
+		}
 		return NewGroupingExpr(expr), nil
 	}
-  return nil, NewParseError(parser.peek(), "Expect expression.")
+	return nil, NewParseError(parser.peek(), "Expect expression.")
 }
 
 func (parser *Parser) match(types ...TokenType) bool {
@@ -155,9 +155,9 @@ func (parser *Parser) match(types ...TokenType) bool {
 func (parser *Parser) consume(typ TokenType, message string) error {
 	if parser.check(typ) {
 		parser.advance()
-    return nil
+		return nil
 	}
-  return NewParseError(parser.peek(), message)
+	return NewParseError(parser.peek(), message)
 }
 
 func (parser *Parser) check(tt TokenType) bool {
@@ -187,15 +187,15 @@ func (parser *Parser) prev() *Token {
 }
 
 func (parser *Parser) sync() {
-  parser.advance();
-  for !parser.isEOF() {
-    if (parser.prev().Typ == SEMICOLON) {
-      return
-    }
-    switch (parser.peek().Typ) {
-      case CLASS, FUN, VAR, FOR, IF, WHILE, PRINT, RETURN:
-        return
-    }
-    parser.advance();
-  }
+	parser.advance()
+	for !parser.isEOF() {
+		if parser.prev().Typ == SEMICOLON {
+			return
+		}
+		switch parser.peek().Typ {
+		case CLASS, FUN, VAR, FOR, IF, WHILE, PRINT, RETURN:
+			return
+		}
+		parser.advance()
+	}
 }
