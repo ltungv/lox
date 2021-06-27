@@ -38,6 +38,7 @@ func (reporter *SimpleReporter) Report(err error) {
 
 func (reporter *SimpleReporter) Reset() {
 	reporter.hadErr = false
+	reporter.hadRuntimeErr = false
 }
 
 func (reporter *SimpleReporter) HadError() bool {

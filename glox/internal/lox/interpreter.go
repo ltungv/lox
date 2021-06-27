@@ -19,6 +19,7 @@ func (in *Interpreter) Interpret() {
 		in.reporter.Report(err)
 		return
 	}
+
 	switch eval.(type) {
 	case nil:
 		fmt.Println("nil")
@@ -38,28 +39,61 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	switch expr.Op.Typ {
 	case BANG_EQUAL:
 		result := leftEval != rightEval
 		return result, nil
+
 	case EQUAL_EQUAL:
 		result := leftEval == rightEval
 		return result, nil
+
 	case GREATER:
-		result := leftEval.(float64) > rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum > rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+
 	case GREATER_EQUAL:
-		result := leftEval.(float64) >= rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum >= rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+
 	case LESS:
-		result := leftEval.(float64) < rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum < rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+
 	case LESS_EQUAL:
-		result := leftEval.(float64) <= rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum <= rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+
 	case MINUS:
-		result := leftEval.(float64) - rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum - rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+
 	case PLUS:
 		leftStr, okLeftStr := leftEval.(string)
 		rightStr, okRightStr := rightEval.(string)
@@ -73,12 +107,26 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum + rightNum
 			return result, nil
 		}
+
+		return nil, NewRuntimeError(expr.Op, "Operands must be two numbers or two strings.")
+
 	case SLASH:
-		result := leftEval.(float64) - rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum / rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+
 	case STAR:
-		result := leftEval.(float64) - rightEval.(float64)
-		return result, nil
+		leftNum, okLeftNum := leftEval.(float64)
+		rightNum, okRightNum := rightEval.(float64)
+		if okLeftNum && okRightNum {
+			result := leftNum * rightNum
+			return result, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 	}
 	panic("Unreachable")
 }
@@ -96,11 +144,15 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	switch expr.Op.Typ {
 	case BANG:
 		return !in.isTruthy(exprEval), nil
 	case MINUS:
-		return -exprEval.(float64), nil
+		if exprNum, ok := exprEval.(float64); ok {
+			return -exprNum, nil
+		}
+		return nil, NewRuntimeError(expr.Op, "Operand must be a number.")
 	}
 	panic("Unreachable")
 }
