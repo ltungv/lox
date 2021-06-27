@@ -12,6 +12,7 @@ import (
 type Reporter interface {
 	Report(err error)
 	HadError() bool
+	Reset()
 }
 
 // SimpleReporter writes error as-is to inner writer
@@ -31,4 +32,8 @@ func (reporter *SimpleReporter) Report(err error) {
 
 func (reporter *SimpleReporter) HadError() bool {
 	return reporter.hadErr
+}
+
+func (reporter *SimpleReporter) Reset() {
+	reporter.hadErr = false
 }

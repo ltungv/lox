@@ -33,13 +33,11 @@ func main() {
 func run(script string, reporter lox.Reporter) {
 	sc := lox.NewScanner([]rune(script), reporter)
 	tokens := sc.Scan()
-	parser := lox.NewParser(tokens)
-	expr, err := parser.Parse()
-	if err != nil {
-		reporter.Report(err)
+	parser := lox.NewParser(tokens, reporter)
+	expr := parser.Parse()
+	if reporter.HadError() {
 		return
 	}
-
 	printer := lox.AstPrinter{}
 	fmt.Println(printer.Print(expr))
 }
@@ -54,6 +52,7 @@ func runPrompt(reporter lox.Reporter) {
 			break
 		}
 		run(s.Text(), reporter)
+		reporter.Reset()
 	}
 	if err := s.Err(); err != nil {
 		reporter.Report(err)

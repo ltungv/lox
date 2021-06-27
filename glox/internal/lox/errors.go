@@ -2,19 +2,17 @@ package lox
 
 import "fmt"
 
-// InterpreterError wrapped the error message returned by interpreter with
-// additional information on where the error occured.
-type GloxError struct {
+type ScanError struct {
 	line    int
 	message string
 }
 
-// NewGloxError creates a new interpreter error
-func NewGloxError(line int, message string) error {
-	return &GloxError{line, message}
+// NewScanError creates a new interpreter error
+func NewScanError(line int, message string) error {
+	return &ScanError{line, message}
 }
 
-func (err *GloxError) Error() string {
+func (err *ScanError) Error() string {
 	return fmt.Sprintf(
 		"[line %d] Error: %s",
 		err.line,
@@ -22,14 +20,13 @@ func (err *GloxError) Error() string {
 	)
 }
 
-// InterpreterError wrapped the error message returned by interpreter with
-// additional information on where the error occured.
+// ParserError contains an error message and the token at which the error occurs
 type ParseError struct {
 	token   *Token
 	message string
 }
 
-// NewGloxError creates a new interpreter error
+// NewParseError creates a new parsing error
 func NewParseError(token *Token, message string) error {
 	return &ParseError{token, message}
 }

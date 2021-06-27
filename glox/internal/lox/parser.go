@@ -10,20 +10,29 @@ package lox
 // comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 // term       --> factor ( ( "-" | "+" ) factor )* ;
 // factor     --> unary ( ( "/" | "*" ) unary )* ;
-// unary      --> ( "!" | "-" ) unary | primary ;
-// primary    --> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
+// unary      --> ( "!" | "-" ) unary 
+//              | primary ;
+// primary    --> NUMBER | STRING 
+//              | "true" | "false" | "nil"
+//              | "(" expression ")" ;
 type Parser struct {
 	current int
 	tokens  []*Token
+	reporter Reporter
 }
 
 // NewParse creates a new parse for the Lox language
-func NewParser(tokens []*Token) *Parser {
-	return &Parser{0, tokens}
+func NewParser(tokens []*Token, reporter Reporter) *Parser {
+	return &Parser{0, tokens, reporter}
 }
 
-func (parser *Parser) Parse() (Expr, error) {
-	return parser.expression()
+func (parser *Parser) Parse() (Expr) {
+	expr, err := parser.expression()
+	if err != nil {
+		parser.reporter.Report(err)
+		return nil
+	}
+	return expr
 }
 
 // expression --> equality ;
@@ -134,7 +143,10 @@ func (parser *Parser) primary() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := parser.consume(RIGHT_PAREN, "Expect ')' after expression"); err != nil {
+		if err := parser.consume(
+			RIGHT_PAREN,
+			"Expect ')' after expression",
+		); err != nil {
 			return nil, err
 		}
 		return NewGroupingExpr(expr), nil
