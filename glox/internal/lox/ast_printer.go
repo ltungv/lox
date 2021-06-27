@@ -1,6 +1,9 @@
 package lox
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 type AstPrinter struct{}
 
@@ -22,13 +25,13 @@ func (printer *AstPrinter) VisitGroupingExpr(expr *GroupingExpr) (interface{}, e
 
 func (printer *AstPrinter) VisitLiteralExpr(expr *LiteralExpr) (interface{}, error) {
 	var s string
-	switch expr.Value.(type) {
+	switch v := expr.Value.(type) {
 	case nil:
-		s = "nil"
+		s = fmt.Sprintln("nil")
 	case float64:
-		s = fmt.Sprintf("%f", expr.Value)
+		s = fmt.Sprintln(strconv.FormatFloat(v, 'f', -1, 64))
 	default:
-		s = fmt.Sprintf("%v", expr.Value)
+		s = fmt.Sprintf("%v\n", v)
 	}
 	return s, nil
 }

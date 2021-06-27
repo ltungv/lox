@@ -1,6 +1,9 @@
 package lox
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
 // struct implements ExprVisitor
@@ -20,11 +23,11 @@ func (in *Interpreter) Interpret() {
 		return
 	}
 
-	switch eval.(type) {
+	switch v := eval.(type) {
 	case nil:
 		fmt.Println("nil")
 	case float64:
-		fmt.Printf("%f\n", eval)
+		fmt.Println(strconv.FormatFloat(v, 'f', -1, 64))
 	default:
 		fmt.Printf("%v\n", eval)
 	}
