@@ -49,7 +49,7 @@ func defineAst(outputDir string, baseName string, types []string) {
 
 	// Interface for Expr in AST
 	fmt.Fprintf(writer, "type %s interface {\n", baseName)
-	fmt.Fprintf(writer, "\tAccept(visitor %sVisitor) interface{}\n", baseName)
+	fmt.Fprintf(writer, "\tAccept(visitor %sVisitor) (interface{}, error)\n", baseName)
 	fmt.Fprintf(writer, "}\n")
 
 	defineVisitor(writer, baseName, types)
@@ -69,7 +69,7 @@ func defineVisitor(writer io.Writer, baseName string, types []string) {
 		typeName := strings.TrimSpace(strings.Split(t, ":")[0])
 		fmt.Fprintf(
 			writer,
-			"\tVisit%s%s(%s *%s%s) interface{}\n",
+			"\tVisit%s%s(%s *%s%s) (interface{}, error)\n",
 			typeName, baseName,
 			strings.ToLower(baseName),
 			typeName, baseName,
@@ -122,7 +122,7 @@ func defineType(
 	// Accept method
 	fmt.Fprintf(
 		writer,
-		"func (%s *%s%s) Accept(visitor %sVisitor) interface{} {\n",
+		"func (%s *%s%s) Accept(visitor %sVisitor) (interface{}, error) {\n",
 		strings.ToLower(baseName),
 		typeName, baseName,
 		baseName,

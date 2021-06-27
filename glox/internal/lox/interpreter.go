@@ -5,7 +5,7 @@ import "fmt"
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
 // struct implements ExprVisitor
 type Interpreter struct {
-	expr Expr
+	expr     Expr
 	reporter Reporter
 }
 
