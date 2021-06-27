@@ -27,8 +27,6 @@ func (printer *AstPrinter) VisitLiteralExpr(expr *LiteralExpr) (interface{}, err
 		s = "nil"
 	case float64:
 		s = fmt.Sprintf("%f", expr.Value)
-	case string:
-		s = fmt.Sprintf("%s", expr.Value)
 	default:
 		s = fmt.Sprintf("%v", expr.Value)
 	}
