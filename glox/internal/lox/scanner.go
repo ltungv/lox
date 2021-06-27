@@ -152,12 +152,9 @@ func (scanner *Scanner) scanNumber() {
 		}
 	}
 	lexeme := string(scanner.source[scanner.start:scanner.current])
-	// conver to double
-	literal, err := strconv.ParseFloat(lexeme, 64)
-	if err != nil {
-		// NOTE: This should not happen
-		panic(err)
-	}
+	// NOTE: we're ignoring the error, since we have already verified that the
+	// lexeme contains a valid 64-bit floating point.
+	literal, _ := strconv.ParseFloat(lexeme, 64)
 	scanner.addToken(NUMBER, literal)
 }
 
