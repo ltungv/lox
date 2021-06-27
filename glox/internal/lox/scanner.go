@@ -111,7 +111,7 @@ func (scanner *Scanner) Scan() []*Token {
 	}
 	scanner.tokens = append(
 		scanner.tokens,
-		NewToken(EOF, "", nil, scanner.current),
+		NewToken(EOF, "", nil, scanner.line),
 	)
 	return scanner.tokens
 }
