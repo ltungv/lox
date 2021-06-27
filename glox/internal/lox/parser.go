@@ -10,14 +10,14 @@ package lox
 // comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 // term       --> factor ( ( "-" | "+" ) factor )* ;
 // factor     --> unary ( ( "/" | "*" ) unary )* ;
-// unary      --> ( "!" | "-" ) unary 
+// unary      --> ( "!" | "-" ) unary
 //              | primary ;
-// primary    --> NUMBER | STRING 
+// primary    --> NUMBER | STRING
 //              | "true" | "false" | "nil"
 //              | "(" expression ")" ;
 type Parser struct {
-	current int
-	tokens  []*Token
+	current  int
+	tokens   []*Token
 	reporter Reporter
 }
 
@@ -26,7 +26,7 @@ func NewParser(tokens []*Token, reporter Reporter) *Parser {
 	return &Parser{0, tokens, reporter}
 }
 
-func (parser *Parser) Parse() (Expr) {
+func (parser *Parser) Parse() Expr {
 	expr, err := parser.expression()
 	if err != nil {
 		parser.reporter.Report(err)
