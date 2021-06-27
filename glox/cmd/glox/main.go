@@ -33,8 +33,9 @@ func run(script string, reporter lox.Reporter) {
 	if reporter.HadError() {
 		return
 	}
-	printer := lox.AstPrinter{}
-	fmt.Println(printer.Print(expr))
+
+	interpreter := lox.NewInterpreter(expr, reporter)
+	interpreter.Interpret()
 }
 
 // Run the interpreter in REPL mode
