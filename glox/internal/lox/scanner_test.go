@@ -1,8 +1,10 @@
 package lox
 
 import (
-	"github.com/stretchr/testify/assert"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestScanSingleToken(t *testing.T) {
@@ -123,6 +125,68 @@ func TestScanComments(t *testing.T) {
 		assert.False(report.HadError())
 		assert.Equal(tc.toks, toks)
 	}
+}
+
+func TestScanValidTokensSequence(t *testing.T) {
+	lexemes := []string{
+		"(", ")", "{", "}", ",", ".", "-", "+", ";", "/", "*",
+		"!", "!=", "=", "==", ">", ">=", "<", "<=",
+		"v1", "_2v", "\"string\"", "\"also\nstring\"", "10", "3.14",
+		"and", "class", "else", "false", "fun", "for", "if", "nil", "or",
+		"print", "return", "super", "this", "true", "var", "while",
+	}
+	toksWant := []*Token{
+		{LEFT_PAREN, "(", nil, 1},
+		{RIGHT_PAREN, ")", nil, 1},
+		{LEFT_BRACE, "{", nil, 1},
+		{RIGHT_BRACE, "}", nil, 1},
+		{COMMA, ",", nil, 1},
+		{DOT, ".", nil, 1},
+		{MINUS, "-", nil, 1},
+		{PLUS, "+", nil, 1},
+		{SEMICOLON, ";", nil, 1},
+		{SLASH, "/", nil, 1},
+		{STAR, "*", nil, 1},
+		{BANG, "!", nil, 1},
+		{BANG_EQUAL, "!=", nil, 1},
+		{EQUAL, "=", nil, 1},
+		{EQUAL_EQUAL, "==", nil, 1},
+		{GREATER, ">", nil, 1},
+		{GREATER_EQUAL, ">=", nil, 1},
+		{LESS, "<", nil, 1},
+		{LESS_EQUAL, "<=", nil, 1},
+		{IDENTIFIER, "v1", nil, 1},
+		{IDENTIFIER, "_2v", nil, 1},
+		{STRING, "\"string\"", "string", 1},
+		{STRING, "\"also\nstring\"", "also\nstring", 2},
+		{NUMBER, "10", 10.0, 2},
+		{NUMBER, "3.14", 3.14, 2},
+		{AND, "and", nil, 2},
+		{CLASS, "class", nil, 2},
+		{ELSE, "else", nil, 2},
+		{FALSE, "false", nil, 2},
+		{FUN, "fun", nil, 2},
+		{FOR, "for", nil, 2},
+		{IF, "if", nil, 2},
+		{NIL, "nil", nil, 2},
+		{OR, "or", nil, 2},
+		{PRINT, "print", nil, 2},
+		{RETURN, "return", nil, 2},
+		{SUPER, "super", nil, 2},
+		{THIS, "this", nil, 2},
+		{TRUE, "true", nil, 2},
+		{VAR, "var", nil, 2},
+		{WHILE, "while", nil, 2},
+		tokEOF(2),
+	}
+
+	report := NewMockReporter()
+	scan := NewScanner([]rune(strings.Join(lexemes, " ")), report)
+	toks := scan.Scan()
+
+	assert := assert.New(t)
+	assert.False(report.HadError())
+	assert.Equal(toksWant, toks)
 }
 
 type MockReporter struct {
