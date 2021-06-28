@@ -8,13 +8,23 @@ Instead of using `panic` and `recover` in Go for error reporting and recovery, s
 
 I'll try to write some unit tests along the way, they probably just do some simple sanity checks. The [author's Github repository] contains a full test suite that can be used to test our final interpreter, so we will rely on that for better tests.
 
+## Implemented challenges
 
-## Additional features / Implemented challenges
++ [x] Multi-line comments
++ [ ] Comma operator
++ [ ] C-style conditional `?:`
++ [ ] Expressive error report for binary operator appearing w/o LHS
+  + By using *error productions* technique
+  + Also parse and discard the RHS of that erroneous expression
 
-In additional to the basic features implemented by the author of the book, our implementation also supports:
-+ Multi-line comments
+## Additional stuffs
+
++ [x] Number follows [IEEE 754] 
++ [ ] Type check on LHS before evaluating RHS in BinaryOp
+
 
 [author's Github repository]: https://github.com/munificent/craftinginterpreters
 [Bob Nystrom]: https://github.com/munificent
 [chapter 3]: http://craftinginterpreters.com/the-lox-language.html
 [Crafting Interpreters]: http://craftinginterpreters.com/
+[IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
