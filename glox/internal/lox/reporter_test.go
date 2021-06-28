@@ -27,7 +27,7 @@ func TestSimpleReporterSendAnyError(t *testing.T) {
 	r := NewSimpleReporter(&out)
 	r.Report(err)
 
-	assert.Equal(err.Error(), strings.TrimSpace(out.String()))
+	assert.Equal(fmt.Sprintf("%v\n", err), out.String())
 	assert.True(r.HadError())
 	assert.False(r.HadRuntimeError())
 }
@@ -40,7 +40,7 @@ func TestSimpleReporterSendRuntimeError(t *testing.T) {
 	r := NewSimpleReporter(&out)
 	r.Report(err)
 
-	assert.Equal(err.Error(), strings.TrimSpace(out.String()))
+	assert.Equal(fmt.Sprintf("%v\n", err), out.String())
 	assert.False(r.HadError())
 	assert.True(r.HadRuntimeError())
 }
@@ -55,7 +55,7 @@ func TestSimpleReporterSendErrors(t *testing.T) {
 	r.Report(err1)
 	r.Report(err2)
 
-	assert.Equal(fmt.Sprintf("%v\n%v", err1, err2), strings.TrimSpace(out.String()))
+	assert.Equal(fmt.Sprintf("%v\n%v\n", err1, err2), out.String())
 	assert.True(r.HadError())
 	assert.True(r.HadRuntimeError())
 }
