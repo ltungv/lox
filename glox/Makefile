@@ -1,18 +1,24 @@
+PKG_CMD=./cmd/glox
+
+TARGET_DIR=./target/
+
+AST_CODEGEN_PKG=./internal/cmd/ast_codegen
+AST_CODEGEN_OUT=./internal/lox/
+
 default: fmt build
 
-run:
-	go run ./cmd/glox
-
 build:
-	rm -rf ./target/
-	mkdir target
-	go build -o ./target/ ./cmd/glox
+	go build -o ${TARGET_DIR} ${PKG_CMD}
+
+run:
+	go run ${PKG_CMD}
+
+codegen:
+	go run ${AST_CODEGEN_PKG} ${AST_CODEGEN_OUT}
 
 fmt:
-	go fmt -x ./cmd/glox
-	go fmt -x ./internal/cmd/ast_codegen
-	go fmt -x ./internal/cmd/ast_printer
-	go fmt -x ./internal/lox
+	go fmt ./...
 
-ast_codegen:
-	go run ./internal/cmd/ast_codegen ./internal/lox/
+clean:
+	rm -rf ${TARGET_DIR}
+
