@@ -10,6 +10,9 @@ default: fmt build
 build:
 	go build -o ${TARGET_DIR} ${PKG_CMD}
 
+test:
+	go test ./...
+
 run:
 	go run ${PKG_CMD}
 
