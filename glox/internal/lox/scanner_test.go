@@ -189,16 +189,61 @@ func TestScanValidTokensSequence(t *testing.T) {
 	assert.Equal(toksWant, toks)
 }
 
+func TestScanWithErrors(t *testing.T) {
+	testCases := []struct {
+		src    string
+		errors []error
+		toks   []*Token
+	}{
+		{"\"yo where's the closing quote",
+			[]error{NewScanError(1, "Unterminated string.")},
+			[]*Token{tokEOF(1)}},
+
+		{"\"yo\nwhere's\nthe\nclosing\nquote",
+			[]error{NewScanError(5, "Unterminated string.")},
+			[]*Token{tokEOF(5)}},
+
+		{"/*yo where's the closing STAR-SLASH",
+			[]error{NewScanError(1, "Unterminated multiline comment.")},
+			[]*Token{tokEOF(1)}},
+
+		{"/*yo\nwhere's\nthe\nclosing\nSTAR-SLASH",
+			[]error{NewScanError(5, "Unterminated multiline comment.")},
+			[]*Token{tokEOF(5)}},
+
+		{"@ # $ % \"valid again\"",
+			[]error{NewScanError(1, "Unexpected character."),
+				NewScanError(1, "Unexpected character."),
+				NewScanError(1, "Unexpected character."),
+				NewScanError(1, "Unexpected character."),
+			},
+			[]*Token{{STRING, "\"valid again\"", "valid again", 1}, tokEOF(1)}},
+	}
+
+	assert := assert.New(t)
+	for _, tc := range testCases {
+		report := NewMockReporter()
+		scan := NewScanner([]rune(tc.src), report)
+		toks := scan.Scan()
+
+		assert.True(report.HadError())
+		assert.Equal(tc.errors, report.errors)
+		assert.Equal(tc.toks, toks)
+	}
+}
+
 type MockReporter struct {
+	errors        []error
 	hadErr        bool
 	hadRuntimeErr bool
 }
 
-func NewMockReporter() Reporter {
-	return &MockReporter{false, false}
+func NewMockReporter() *MockReporter {
+	return &MockReporter{make([]error, 0), false, false}
 }
 
 func (reporter *MockReporter) Report(err error) {
+	reporter.errors = append(reporter.errors, err)
 	if _, isRuntimeErr := err.(*RuntimeError); isRuntimeErr {
 		reporter.hadRuntimeErr = true
 	} else {
