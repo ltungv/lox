@@ -1,6 +1,8 @@
 package lox
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -322,5 +324,38 @@ func TestParseOpPrecedence(t *testing.T) {
 
 		assert.False(report.HadError())
 		assert.Equal(tc.expr, expr)
+	}
+}
+
+func TestParseWithErrors(t *testing.T) {
+	testCases := []struct {
+		src    string
+		errors []error
+	}{
+		{"",
+			[]error{NewParseError(tokEOF(1), "Expect expression.")}},
+
+		{"(1 * (2 + 3)",
+			[]error{NewParseError(tokEOF(1), "Expect ')' after expression.")}},
+	}
+
+	assert := assert.New(t)
+	for _, tc := range testCases {
+		var out strings.Builder
+		report := NewSimpleReporter(&out)
+		scan := NewScanner([]rune(tc.src), report)
+		toks := scan.Scan()
+		parse := NewParser(toks, report)
+		expr := parse.Parse()
+
+		var messages []string
+		for _, e := range tc.errors {
+			messages = append(messages, e.Error())
+		}
+
+		assert.Nil(expr)
+		assert.Equal(fmt.Sprintf("%s\n", strings.Join(messages, "\n")), out.String())
+		assert.True(report.HadError())
+		assert.False(report.HadRuntimeError())
 	}
 }

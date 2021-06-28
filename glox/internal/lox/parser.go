@@ -145,7 +145,7 @@ func (parser *Parser) primary() (Expr, error) {
 		}
 		if err := parser.consume(
 			RIGHT_PAREN,
-			"Expect ')' after expression",
+			"Expect ')' after expression.",
 		); err != nil {
 			return nil, err
 		}
