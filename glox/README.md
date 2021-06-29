@@ -16,6 +16,9 @@ I'll try to write some unit tests along the way, they probably just do some simp
   + Also parse and discard the RHS of that erroneous expression
 + [ ] Comma operator
 + [ ] C-style conditional `?:`
++ [ ] Compare values of different types
++ [ ] Implicit conversion to string for `+` operator when either operand is a string
++ [ ] RuntimeError: Division by zero 
 
 ## Additional stuffs
 
