@@ -35,7 +35,7 @@ func run(script string, reporter lox.Reporter) {
 	}
 
 	interpreter := lox.NewInterpreter(expr, reporter)
-	interpreter.Interpret()
+	interpreter.Interpret(os.Stdout)
 }
 
 // Run the interpreter in REPL mode

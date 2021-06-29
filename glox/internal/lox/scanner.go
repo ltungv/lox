@@ -243,11 +243,3 @@ func (scanner *Scanner) peekNext() rune {
 	}
 	return scanner.source[scanner.current+1]
 }
-
-func isAlphanumeric(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r)
-}
-
-func isBeginIdent(r rune) bool {
-	return unicode.IsLetter(r) || r == '_'
-}

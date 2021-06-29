@@ -54,7 +54,7 @@ func TestParsePrimary(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 
@@ -114,7 +114,7 @@ func TestParseUnary(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 
@@ -186,7 +186,7 @@ func TestParseFactor(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 
@@ -258,7 +258,7 @@ func TestParseTerm(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 
@@ -320,7 +320,7 @@ func TestParseComparison(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 
@@ -392,7 +392,7 @@ func TestParseEquality(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 
@@ -472,7 +472,7 @@ func TestParseOpPrecedence(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		parse := NewParser(tc.toks, report)
 		expr := parse.Parse()
 

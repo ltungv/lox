@@ -2,7 +2,7 @@ package lox
 
 import (
 	"fmt"
-	"strconv"
+	"io"
 )
 
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
@@ -16,21 +16,12 @@ func NewInterpreter(expr Expr, reporter Reporter) *Interpreter {
 	return &Interpreter{expr, reporter}
 }
 
-func (in *Interpreter) Interpret() {
+func (in *Interpreter) Interpret(w io.Writer) {
 	eval, err := in.eval(in.expr)
 	if err != nil {
 		in.reporter.Report(err)
-		return
 	}
-
-	switch v := eval.(type) {
-	case nil:
-		fmt.Println("nil")
-	case float64:
-		fmt.Println(strconv.FormatFloat(v, 'f', -1, 64))
-	default:
-		fmt.Printf("%v\n", eval)
-	}
+	fmt.Fprintln(w, stringify(eval))
 }
 
 func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
@@ -150,7 +141,7 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 
 	switch expr.Op.Typ {
 	case BANG:
-		return !in.isTruthy(exprEval), nil
+		return !isTruthy(exprEval), nil
 	case MINUS:
 		if exprNum, ok := exprEval.(float64); ok {
 			return -exprNum, nil
@@ -162,14 +153,4 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 
 func (in *Interpreter) eval(expr Expr) (interface{}, error) {
 	return expr.Accept(in)
-}
-
-func (in *Interpreter) isTruthy(value interface{}) bool {
-	if value == nil {
-		return false
-	}
-	if v, ok := value.(bool); ok {
-		return v
-	}
-	return true
 }

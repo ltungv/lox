@@ -75,7 +75,7 @@ func TestScanSingleToken(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		scan := NewScanner([]rune(tc.src), report)
 		toks := scan.Scan()
 
@@ -98,7 +98,7 @@ func TestScanWhiteSpaces(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		scan := NewScanner([]rune(tc.src), report)
 		toks := scan.Scan()
 
@@ -118,7 +118,7 @@ func TestScanComments(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		scan := NewScanner([]rune(tc.src), report)
 		toks := scan.Scan()
 
@@ -180,7 +180,7 @@ func TestScanValidTokensSequence(t *testing.T) {
 		tokEOF(2),
 	}
 
-	report := NewMockReporter()
+	report := newMockReporter()
 	scan := NewScanner([]rune(strings.Join(lexemes, " ")), report)
 	toks := scan.Scan()
 
@@ -222,7 +222,7 @@ func TestScanWithErrors(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range testCases {
-		report := NewMockReporter()
+		report := newMockReporter()
 		scan := NewScanner([]rune(tc.src), report)
 		toks := scan.Scan()
 
@@ -230,40 +230,4 @@ func TestScanWithErrors(t *testing.T) {
 		assert.Equal(tc.errors, report.errors)
 		assert.Equal(tc.toks, toks)
 	}
-}
-
-type MockReporter struct {
-	errors        []error
-	hadErr        bool
-	hadRuntimeErr bool
-}
-
-func NewMockReporter() *MockReporter {
-	return &MockReporter{make([]error, 0), false, false}
-}
-
-func (reporter *MockReporter) Report(err error) {
-	reporter.errors = append(reporter.errors, err)
-	if _, isRuntimeErr := err.(*RuntimeError); isRuntimeErr {
-		reporter.hadRuntimeErr = true
-	} else {
-		reporter.hadErr = true
-	}
-}
-
-func (reporter *MockReporter) Reset() {
-	reporter.hadErr = false
-	reporter.hadRuntimeErr = false
-}
-
-func (reporter *MockReporter) HadError() bool {
-	return reporter.hadErr
-}
-
-func (reporter *MockReporter) HadRuntimeError() bool {
-	return reporter.hadRuntimeErr
-}
-
-func tokEOF(line int) *Token {
-	return NewToken(EOF, "", nil, line)
 }
