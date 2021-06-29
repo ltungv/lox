@@ -438,7 +438,7 @@ func TestInterpretWithErrors(t *testing.T) {
 			actualReports = append(actualReports, e.Error())
 		}
 
-		assert.Empty(interpretOut)
+		assert.Empty(interpretOut.String())
 		assert.Equal(expectedReports, actualReports)
 		assert.False(report.HadError())
 		assert.True(report.HadRuntimeError())
