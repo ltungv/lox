@@ -334,18 +334,23 @@ func TestParseWithErrors(t *testing.T) {
 	}{
 		{"",
 			[]error{NewParseError(tokEOF(1), "Expect expression.")}},
-
 		{"(1 * (2 + 3)",
 			[]error{NewParseError(tokEOF(1), "Expect ')' after expression.")}},
-
 		{"* 2",
-			[]error{NewParseError(tokEOF(1), "Unary '*' expressions are not supported.")}},
-
+			[]error{
+				NewParseError(
+					NewToken(STAR, "*", nil, 1),
+					"Unary '*' expressions are not supported.")}},
 		{"(/ 2)",
-			[]error{NewParseError(tokEOF(1), "Unary '/' expressions are not supported.")}},
-
+			[]error{
+				NewParseError(
+					NewToken(SLASH, "/", nil, 1),
+					"Unary '/' expressions are not supported.")}},
 		{"1 * + 2",
-			[]error{NewParseError(tokEOF(1), "Unary '+' expressions are not supported.")}},
+			[]error{
+				NewParseError(
+					NewToken(PLUS, "+", nil, 1),
+					"Unary '+' expressions are not supported.")}},
 	}
 
 	assert := assert.New(t)
