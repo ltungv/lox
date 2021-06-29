@@ -20,6 +20,7 @@ func (in *Interpreter) Interpret(w io.Writer) {
 	eval, err := in.eval(in.expr)
 	if err != nil {
 		in.reporter.Report(err)
+		return
 	}
 	fmt.Fprintln(w, stringify(eval))
 }
