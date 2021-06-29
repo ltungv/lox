@@ -1,20 +1,28 @@
 package lox
 
+import "fmt"
+
 // Parser composes the syntax tree for the Lox language from the sequence of
-// valid tokens
+// valid tokens that follow the following grammar rule.
 //
-// # Grammar
+// Grammar
 //
-// expression --> equality ;
-// equality   --> comparison ( ( "!=" | "==" ) comparison )* ;
-// comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-// term       --> factor ( ( "-" | "+" ) factor )* ;
-// factor     --> unary ( ( "/" | "*" ) unary )* ;
-// unary      --> ( "!" | "-" ) unary
-//              | primary ;
-// primary    --> NUMBER | STRING
-//              | "true" | "false" | "nil"
-//              | "(" expression ")" ;
+//	expression --> equality ;
+//	equality   --> comparison ( ( "!=" | "==" ) comparison )* ;
+//	comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+//	term       --> factor ( ( "-" | "+" ) factor )* ;
+//	factor     --> unary ( ( "/" | "*" ) unary )* ;
+//	unary      --> ( "!" | "-" | "+" | "/" | "*" ) unary
+//	             | primary ;
+//	primary    --> NUMBER | STRING
+//	             | "true" | "false" | "nil"
+//	             | "(" expression ")" ;
+//
+// In our unary rule for, we our accepting three unary operators that are not supported
+// by the interpreter so we can produce better error
+// + Unary '+' expressions are not supported.
+// + Unary '/' expressions are not supported.
+// + Unary '*' expressions are not supported.
 type Parser struct {
 	current  int
 	tokens   []*Token
@@ -111,15 +119,24 @@ func (parser *Parser) factor() (Expr, error) {
 	return expr, nil
 }
 
-// unary --> ( "!" | "-" ) unary | primary ;
+// unary --> ( "!" | "-" | "+" | "/" | "*" ) unary
+//         | primary ;
 func (parser *Parser) unary() (Expr, error) {
-	if parser.match(BANG, MINUS) {
+	if parser.match(BANG, MINUS, PLUS, SLASH, STAR) {
 		op := parser.prev()
-		expr, err := parser.unary()
-		if err != nil {
-			return nil, err
+		switch expr, err := parser.unary(); op.Typ {
+		case PLUS, SLASH, STAR:
+			err = NewParseError(
+				op,
+				fmt.Sprintf("Unary '%s' expressions are not supported.", op.Lexeme),
+			)
+			fallthrough
+		case BANG, MINUS:
+			if err != nil {
+				return nil, err
+			}
+			return NewUnaryExpr(op, expr), nil
 		}
-		return NewUnaryExpr(op, expr), nil
 	}
 	return parser.primary()
 }

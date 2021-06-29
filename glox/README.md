@@ -11,11 +11,11 @@ I'll try to write some unit tests along the way, they probably just do some simp
 ## Implemented challenges
 
 + [x] Multi-line comments
-+ [ ] Comma operator
-+ [ ] C-style conditional `?:`
-+ [ ] Expressive error report for binary operator appearing w/o LHS
++ [x] Expressive error report for binary operator appearing w/o LHS
   + By using *error productions* technique
   + Also parse and discard the RHS of that erroneous expression
++ [ ] Comma operator
++ [ ] C-style conditional `?:`
 
 ## Additional stuffs
 
