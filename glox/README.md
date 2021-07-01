@@ -20,7 +20,7 @@ I'll try to write some unit tests along the way, they probably just do some simp
 + [ ] RuntimeError: Division by zero 
 + [ ] Accessing an uninitialized variable returns a runtime error
 + [ ] ~Compare values of different types~
-+ [ ] ~Implicit conversion to string for `+` operator when either operand is a string!
++ [ ] ~Implicit conversion to string for `+` operator when either operand is a string~
 
 The challenges that are crossed out will not likely be implemented
 
