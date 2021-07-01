@@ -7,16 +7,28 @@ import "fmt"
 //
 // Grammar
 //
-//	expression --> equality ;
-//	equality   --> comparison ( ( "!=" | "==" ) comparison )* ;
+//	program --> declaration* EOF ;
+//	declaration --> varDeclaration
+//	              | statement
+//	varDeclaration --> "var" IDENTIFIER ( "=" expression )? ";" ;
+//	statement --> block
+//	            | expressionStatement
+//	            | printStatement ;
+//	block --> "{" declaration* "}" ;
+//  expressionStatement --> expression ";" ;
+//  printStatement --> "print" expression ";" ;
+//	expression --> assignment ;
+//	assignment --> IDENTIFIER "=" expression ";"
+//	             | equality ;
+//	equality --> comparison ( ( "!=" | "==" ) comparison )* ;
 //	comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-//	term       --> factor ( ( "-" | "+" ) factor )* ;
-//	factor     --> unary ( ( "/" | "*" ) unary )* ;
-//	unary      --> ( "!" | "-" | "+" | "/" | "*" ) unary
-//	             | primary ;
-//	primary    --> NUMBER | STRING
-//	             | "true" | "false" | "nil"
-//	             | "(" expression ")" ;
+//	term --> factor ( ( "-" | "+" ) factor )* ;
+//	factor --> unary ( ( "/" | "*" ) unary )* ;
+//	unary --> ( "!" | "-" | "+" | "/" | "*" ) unary
+//	        | primary ;
+//	primary --> NUMBER | STRING | IDENTIFIER
+//	          | "true" | "false" | "nil"
+//	          | "(" expression ")" ;
 //
 // In our unary rule for, we our accepting three unary operators that are not supported
 // by the interpreter so we can produce better error
@@ -34,18 +46,139 @@ func NewParser(tokens []*Token, reporter Reporter) *Parser {
 	return &Parser{0, tokens, reporter}
 }
 
-func (parser *Parser) Parse() Expr {
-	expr, err := parser.expression()
-	if err != nil {
-		parser.reporter.Report(err)
-		return nil
+func (parser *Parser) Parse() []Stmt {
+	var statements []Stmt
+	for !parser.isEOF() {
+		stmt := parser.declaration()
+		statements = append(statements, stmt)
 	}
-	return expr
+	return statements
 }
 
-// expression --> equality ;
+// declaration --> varDeclaration
+//               | statement
+func (parser *Parser) declaration() Stmt {
+	var stmt Stmt
+	var err error
+
+	if parser.match(VAR) {
+		stmt, err = parser.varDeclaration()
+	} else {
+		stmt, err = parser.statement()
+	}
+
+	if err != nil {
+		parser.reporter.Report(err)
+		parser.sync()
+		return nil
+	}
+	return stmt
+}
+
+// varDeclaration --> "var" IDENTIFIER ( "=" expression )? ";" ;
+func (parser *Parser) varDeclaration() (Stmt, error) {
+	name, err := parser.consume(IDENTIFIER, "Expect variable name.")
+	if err != nil {
+		return nil, err
+	}
+
+	var initializer Expr
+	if parser.match(EQUAL) {
+		var err error
+		initializer, err = parser.expression()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, err = parser.consume(SEMICOLON, "Expect ';' after variable declaration.")
+	if err != nil {
+		return nil, err
+	}
+	return NewVarStmt(name, initializer), nil
+}
+
+// statement --> block
+//             | expressionStatement
+//             | printStatement ;
+func (parser *Parser) statement() (Stmt, error) {
+	if parser.match(PRINT) {
+		return parser.printStatement()
+	}
+	if parser.match(LEFT_BRACE) {
+		statements, err := parser.block()
+		if err != nil {
+			return nil, err
+		}
+		return NewBlockStmt(statements), nil
+	}
+	return parser.expressionStatement()
+}
+
+// printStatement --> "print" expression ";" ;
+func (parser *Parser) printStatement() (Stmt, error) {
+	expr, err := parser.expression()
+	if err != nil {
+		return nil, err
+	}
+	_, err = parser.consume(SEMICOLON, "Expect ';' after value.")
+	if err != nil {
+		return nil, err
+	}
+	return NewPrintStmt(expr), nil
+}
+
+// block --> "{" declaration* "}" ;
+func (parser *Parser) block() ([]Stmt, error) {
+	var statements []Stmt
+	for !parser.check(RIGHT_BRACE) && !parser.isEOF() {
+		stmt := parser.declaration()
+		statements = append(statements, stmt)
+	}
+	_, err := parser.consume(RIGHT_BRACE, "Expect '}' after block.")
+	if err != nil {
+		return nil, err
+	}
+	return statements, nil
+}
+
+// expressionStatement --> expression ";" ;
+func (parser *Parser) expressionStatement() (Stmt, error) {
+	expr, err := parser.expression()
+	if err != nil {
+		return nil, err
+	}
+	_, err = parser.consume(SEMICOLON, "Expect ';' after expression.")
+	if err != nil {
+		return nil, err
+	}
+	return NewExpressionStmt(expr), nil
+}
+
+// expression --> assignment ;
 func (parser *Parser) expression() (Expr, error) {
-	return parser.equality()
+	return parser.assignment()
+}
+
+// assignment --> IDENTIFIER "=" expression ";"
+//              | equality ;
+func (parser *Parser) assignment() (Expr, error) {
+	lhs, err := parser.equality()
+	if err != nil {
+		return nil, err
+	}
+	if parser.match(EQUAL) {
+		op := parser.prev()
+		rhs, err := parser.assignment()
+		if err != nil {
+			return nil, err
+		}
+		if lhs, ok := lhs.(*VariableExpr); ok {
+			return NewAssignExpr(lhs.Name, rhs), nil
+		}
+		parser.reporter.Report(NewParseError(op, "Invalid assignment target."))
+	}
+	return lhs, nil
 }
 
 // Creates a left-associative nested tree of binary operator nodes. Match a
@@ -155,15 +288,16 @@ func (parser *Parser) primary() (Expr, error) {
 	if parser.match(NUMBER, STRING) {
 		return NewLiteralExpr(parser.prev().Literal), nil
 	}
+	if parser.match(IDENTIFIER) {
+		return NewVariableExpr(parser.prev()), nil
+	}
 	if parser.match(LEFT_PAREN) {
 		expr, err := parser.expression()
 		if err != nil {
 			return nil, err
 		}
-		if err := parser.consume(
-			RIGHT_PAREN,
-			"Expect ')' after expression.",
-		); err != nil {
+		_, err = parser.consume(RIGHT_PAREN, "Expect ')' after expression.")
+		if err != nil {
 			return nil, err
 		}
 		return NewGroupingExpr(expr), nil
@@ -181,12 +315,12 @@ func (parser *Parser) match(types ...TokenType) bool {
 	return false
 }
 
-func (parser *Parser) consume(typ TokenType, message string) error {
+func (parser *Parser) consume(typ TokenType, message string) (*Token, error) {
 	if parser.check(typ) {
-		parser.advance()
-		return nil
+		token := parser.advance()
+		return token, nil
 	}
-	return NewParseError(parser.peek(), message)
+	return nil, NewParseError(parser.peek(), message)
 }
 
 func (parser *Parser) check(tt TokenType) bool {

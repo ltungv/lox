@@ -25,22 +25,22 @@ func main() {
 	}
 }
 
-func run(script string, reporter lox.Reporter) {
-	sc := lox.NewScanner([]rune(script), reporter)
-	tokens := sc.Scan()
+func run(script string, interpreter *lox.Interpreter, reporter lox.Reporter) {
+	scanner := lox.NewScanner([]rune(script), reporter)
+	tokens := scanner.Scan()
 	parser := lox.NewParser(tokens, reporter)
-	expr := parser.Parse()
+	statements := parser.Parse()
 	if reporter.HadError() {
 		return
 	}
-
-	interpreter := lox.NewInterpreter(expr, reporter)
-	interpreter.Interpret(os.Stdout)
+	interpreter.Interpret(statements)
 }
 
 // Run the interpreter in REPL mode
 func runPrompt() {
 	reporter := lox.NewSimpleReporter(os.Stdout)
+	interpreter := lox.NewInterpreter(os.Stdout, reporter, true)
+
 	s := bufio.NewScanner(os.Stdin)
 	s.Split(bufio.ScanLines)
 	for {
@@ -48,7 +48,7 @@ func runPrompt() {
 		if !s.Scan() {
 			break
 		}
-		run(s.Text(), reporter)
+		run(s.Text(), interpreter, reporter)
 		reporter.Reset()
 	}
 	exitOnError(s.Err(), 1)
@@ -60,7 +60,9 @@ func runFile(fpath string) {
 	exitOnError(err, 1)
 
 	reporter := lox.NewSimpleReporter(os.Stdout)
-	run(string(bytes), reporter)
+	interpreter := lox.NewInterpreter(os.Stdout, reporter, false)
+	run(string(bytes), interpreter, reporter)
+
 	exitIf(reporter.HadError(), 65)
 	exitIf(reporter.HadRuntimeError(), 70)
 }

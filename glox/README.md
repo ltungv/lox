@@ -14,11 +14,15 @@ I'll try to write some unit tests along the way, they probably just do some simp
 + [x] Expressive error report for binary operator appearing w/o LHS
   + By using *error productions* technique
   + Also parse and discard the RHS of that erroneous expression
++ [x] Evaluate and print entered expression in REPL
 + [ ] Comma operator
 + [ ] C-style conditional `?:`
-+ [ ] Compare values of different types
-+ [ ] Implicit conversion to string for `+` operator when either operand is a string
 + [ ] RuntimeError: Division by zero 
++ [ ] Accessing an uninitialized variable returns a runtime error
++ [ ] ~Compare values of different types~
++ [ ] ~Implicit conversion to string for `+` operator when either operand is a string!
+
+The challenges that are crossed out will not likely be implemented
 
 ## Additional stuffs
 

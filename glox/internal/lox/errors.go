@@ -68,9 +68,9 @@ func (err *RuntimeError) Error() string {
 	}
 
 	return fmt.Sprintf(
-		"%s\n[line %d at %s]",
-		err.message,
+		"[line %d] RuntimeError at %s: %s",
 		err.token.Line,
 		loc,
+		err.message,
 	)
 }

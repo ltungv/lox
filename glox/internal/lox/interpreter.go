@@ -8,21 +8,69 @@ import (
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
 // struct implements ExprVisitor
 type Interpreter struct {
-	expr     Expr
-	reporter Reporter
+	environment *Environment
+	output      io.Writer
+	reporter    Reporter
+	isREPL      bool
 }
 
-func NewInterpreter(expr Expr, reporter Reporter) *Interpreter {
-	return &Interpreter{expr, reporter}
+func NewInterpreter(output io.Writer, reporter Reporter, isREPL bool) *Interpreter {
+	return &Interpreter{NewEnvironment(nil), output, reporter, isREPL}
 }
 
-func (in *Interpreter) Interpret(w io.Writer) {
-	eval, err := in.eval(in.expr)
-	if err != nil {
-		in.reporter.Report(err)
-		return
+func (in *Interpreter) Interpret(statements []Stmt) {
+	for _, stmt := range statements {
+		if _, err := in.exec(stmt); err != nil {
+			in.reporter.Report(err)
+			break
+		}
 	}
-	fmt.Fprintln(w, stringify(eval))
+}
+
+func (in *Interpreter) VisitBlockStmt(stmt *BlockStmt) (interface{}, error) {
+	return nil, in.execBlock(stmt.Statements, NewEnvironment(in.environment))
+}
+
+func (in *Interpreter) VisitExpressionStmt(stmt *ExpressionStmt) (interface{}, error) {
+	value, err := in.eval(stmt.Expression)
+	if err != nil {
+		return nil, err
+	}
+	if in.isREPL {
+		fmt.Fprintln(in.output, stringify(value))
+	}
+	return nil, nil
+}
+
+func (in *Interpreter) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
+	expr, err := in.eval(stmt.Expression)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintln(in.output, stringify(expr))
+	return nil, nil
+}
+
+func (in *Interpreter) VisitVarStmt(stmt *VarStmt) (interface{}, error) {
+	var initVal interface{}
+	if stmt.Initializer != nil {
+		var err error
+		initVal, err = in.eval(stmt.Initializer)
+		if err != nil {
+			return nil, err
+		}
+	}
+	in.environment.Define(stmt.Name, initVal)
+	return nil, nil
+}
+
+func (in *Interpreter) VisitAssignExpr(expr *AssignExpr) (interface{}, error) {
+	value, err := in.eval(expr.Value)
+	if err != nil {
+		return nil, err
+	}
+	err = in.environment.Assign(expr.Name, value)
+	return nil, err
 }
 
 func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
@@ -150,6 +198,31 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be a number.")
 	}
 	panic("Unreachable")
+}
+
+func (in *Interpreter) VisitVariableExpr(expr *VariableExpr) (interface{}, error) {
+	val, err := in.environment.Get(expr.Name)
+	if err != nil {
+		return nil, err
+	}
+	return val, nil
+}
+
+func (in *Interpreter) execBlock(statements []Stmt, environment *Environment) error {
+	in.environment = environment
+	defer func() {
+		in.environment = environment.enclosing
+	}()
+	for _, stmt := range statements {
+		if _, err := in.exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (in *Interpreter) exec(stmt Stmt) (interface{}, error) {
+	return stmt.Accept(in)
 }
 
 func (in *Interpreter) eval(expr Expr) (interface{}, error) {

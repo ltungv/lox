@@ -17,14 +17,23 @@ func main() {
 
 	outputDir := os.Args[1]
 	// we do it the scripting way, instead of having types support from Go stdlib
-	var expressionTypes = []string{
+	expressionTypes := []string{
+		"Assign: Name *Token, Value Expr",
 		"Binary: Op *Token, Left Expr, Right Expr",
 		"Grouping: Expression Expr",
 		"Literal: Value interface{}",
 		"Unary: Op *Token, Expression Expr",
+		"Variable: Name *Token",
+	}
+	statementTypes := []string{
+		"Block: Statements []Stmt",
+		"Expression: Expression Expr",
+		"Print: Expression Expr",
+		"Var: Name *Token, Initializer Expr",
 	}
 
 	defineAst(outputDir, "Expr", expressionTypes)
+	defineAst(outputDir, "Stmt", statementTypes)
 }
 
 func defineAst(outputDir string, baseName string, types []string) {
@@ -32,7 +41,7 @@ func defineAst(outputDir string, baseName string, types []string) {
 		outputDir,
 		fmt.Sprintf("%s.go", strings.ToLower(baseName)),
 	)
-	f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(fpath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}

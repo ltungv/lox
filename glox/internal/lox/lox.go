@@ -13,7 +13,7 @@ func stringify(v interface{}) string {
 	case float64:
 		return fmt.Sprint(strconv.FormatFloat(v, 'f', -1, 64))
 	default:
-		return fmt.Sprintf("%v\n", v)
+		return fmt.Sprint(v)
 	}
 }
 
