@@ -19,6 +19,7 @@ I'll try to write some unit tests along the way, they probably just do some simp
 + [ ] C-style conditional `?:`
 + [ ] RuntimeError: Division by zero 
 + [ ] Accessing an uninitialized variable returns a runtime error
++ [ ] `break` statement in loops.
 + [ ] ~Compare values of different types~
 + [ ] ~Implicit conversion to string for `+` operator when either operand is a string~
 

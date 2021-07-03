@@ -28,22 +28,37 @@ func (in *Interpreter) Interpret(statements []Stmt) {
 }
 
 func (in *Interpreter) VisitBlockStmt(stmt *BlockStmt) (interface{}, error) {
-	return nil, in.execBlock(stmt.Statements, NewEnvironment(in.environment))
+	return nil, in.execBlock(stmt.Stmts, NewEnvironment(in.environment))
 }
 
-func (in *Interpreter) VisitExpressionStmt(stmt *ExpressionStmt) (interface{}, error) {
-	value, err := in.eval(stmt.Expression)
+func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
+	expr, err := in.eval(stmt.Expr)
 	if err != nil {
 		return nil, err
 	}
 	if in.isREPL {
-		fmt.Fprintln(in.output, stringify(value))
+		if _, ok := stmt.Expr.(*AssignExpr); !ok {
+			fmt.Fprintln(in.output, stringify(expr))
+		}
+	}
+	return nil, nil
+}
+
+func (in *Interpreter) VisitIfStmt(stmt *IfStmt) (interface{}, error) {
+	cond, err := in.eval(stmt.Cond)
+	if err != nil {
+		return nil, err
+	}
+	if isTruthy(cond) {
+		return in.exec(stmt.ThenBranch)
+	} else {
+		return in.exec(stmt.ElseBranch)
 	}
 	return nil, nil
 }
 
 func (in *Interpreter) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
-	expr, err := in.eval(stmt.Expression)
+	expr, err := in.eval(stmt.Expr)
 	if err != nil {
 		return nil, err
 	}
@@ -53,9 +68,9 @@ func (in *Interpreter) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
 
 func (in *Interpreter) VisitVarStmt(stmt *VarStmt) (interface{}, error) {
 	var initVal interface{}
-	if stmt.Initializer != nil {
+	if stmt.Init != nil {
 		var err error
-		initVal, err = in.eval(stmt.Initializer)
+		initVal, err = in.eval(stmt.Init)
 		if err != nil {
 			return nil, err
 		}
@@ -64,37 +79,53 @@ func (in *Interpreter) VisitVarStmt(stmt *VarStmt) (interface{}, error) {
 	return nil, nil
 }
 
+func (in *Interpreter) VisitWhileStmt(stmt *WhileStmt) (interface{}, error) {
+	for {
+		cond, err := in.eval(stmt.Cond)
+		if err != nil {
+			return nil, err
+		}
+		if !isTruthy(cond) {
+			return nil, nil
+		}
+		_, err = in.exec(stmt.Body)
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
 func (in *Interpreter) VisitAssignExpr(expr *AssignExpr) (interface{}, error) {
-	value, err := in.eval(expr.Value)
+	val, err := in.eval(expr.Val)
 	if err != nil {
 		return nil, err
 	}
-	err = in.environment.Assign(expr.Name, value)
+	err = in.environment.Assign(expr.Name, val)
 	return nil, err
 }
 
 func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
-	leftEval, err := in.eval(expr.Left)
+	lhs, err := in.eval(expr.Lhs)
 	if err != nil {
 		return nil, err
 	}
-	rightEval, err := in.eval(expr.Right)
+	rhs, err := in.eval(expr.Rhs)
 	if err != nil {
 		return nil, err
 	}
 
 	switch expr.Op.Typ {
 	case BANG_EQUAL:
-		result := leftEval != rightEval
+		result := lhs != rhs
 		return result, nil
 
 	case EQUAL_EQUAL:
-		result := leftEval == rightEval
+		result := lhs == rhs
 		return result, nil
 
 	case GREATER:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum > rightNum
 			return result, nil
@@ -102,8 +133,8 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 
 	case GREATER_EQUAL:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum >= rightNum
 			return result, nil
@@ -111,8 +142,8 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 
 	case LESS:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum < rightNum
 			return result, nil
@@ -120,8 +151,8 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 
 	case LESS_EQUAL:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum <= rightNum
 			return result, nil
@@ -129,8 +160,8 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 
 	case MINUS:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum - rightNum
 			return result, nil
@@ -138,14 +169,14 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 
 	case PLUS:
-		leftStr, okLeftStr := leftEval.(string)
-		rightStr, okRightStr := rightEval.(string)
+		leftStr, okLeftStr := lhs.(string)
+		rightStr, okRightStr := rhs.(string)
 		if okLeftStr && okRightStr {
 			result := leftStr + rightStr
 			return result, nil
 		}
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum + rightNum
 			return result, nil
@@ -154,8 +185,8 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operands must be two numbers or two strings.")
 
 	case SLASH:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum / rightNum
 			return result, nil
@@ -163,8 +194,8 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
 
 	case STAR:
-		leftNum, okLeftNum := leftEval.(float64)
-		rightNum, okRightNum := rightEval.(float64)
+		leftNum, okLeftNum := lhs.(float64)
+		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum * rightNum
 			return result, nil
@@ -174,25 +205,47 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 	panic("Unreachable")
 }
 
-func (in *Interpreter) VisitGroupingExpr(expr *GroupingExpr) (interface{}, error) {
-	return in.eval(expr.Expression)
+func (in *Interpreter) VisitGroupExpr(expr *GroupExpr) (interface{}, error) {
+	return in.eval(expr.Expr)
 }
 
 func (in *Interpreter) VisitLiteralExpr(expr *LiteralExpr) (interface{}, error) {
-	return expr.Value, nil
+	return expr.Val, nil
+}
+
+func (in *Interpreter) VisitLogicalExpr(expr *LogicalExpr) (interface{}, error) {
+	lhs, err := in.eval(expr.Lhs)
+	if err != nil {
+		return nil, err
+	}
+
+	switch expr.Op.Typ {
+	case OR:
+		if isTruthy(lhs) {
+			return lhs, nil
+		}
+	case AND:
+		if !isTruthy(lhs) {
+			return lhs, nil
+		}
+	default:
+		panic("Unreachable")
+	}
+
+	return in.eval(expr.Rhs)
 }
 
 func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
-	exprEval, err := in.eval(expr.Expression)
+	exprVal, err := in.eval(expr.Expr)
 	if err != nil {
 		return nil, err
 	}
 
 	switch expr.Op.Typ {
 	case BANG:
-		return !isTruthy(exprEval), nil
+		return !isTruthy(exprVal), nil
 	case MINUS:
-		if exprNum, ok := exprEval.(float64); ok {
+		if exprNum, ok := exprVal.(float64); ok {
 			return -exprNum, nil
 		}
 		return nil, NewRuntimeError(expr.Op, "Operand must be a number.")
@@ -200,7 +253,7 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 	panic("Unreachable")
 }
 
-func (in *Interpreter) VisitVariableExpr(expr *VariableExpr) (interface{}, error) {
+func (in *Interpreter) VisitVarExpr(expr *VarExpr) (interface{}, error) {
 	val, err := in.environment.Get(expr.Name)
 	if err != nil {
 		return nil, err

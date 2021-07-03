@@ -6,77 +6,91 @@ type Expr interface {
 type ExprVisitor interface {
 	VisitAssignExpr(expr *AssignExpr) (interface{}, error)
 	VisitBinaryExpr(expr *BinaryExpr) (interface{}, error)
-	VisitGroupingExpr(expr *GroupingExpr) (interface{}, error)
+	VisitGroupExpr(expr *GroupExpr) (interface{}, error)
 	VisitLiteralExpr(expr *LiteralExpr) (interface{}, error)
+	VisitLogicalExpr(expr *LogicalExpr) (interface{}, error)
 	VisitUnaryExpr(expr *UnaryExpr) (interface{}, error)
-	VisitVariableExpr(expr *VariableExpr) (interface{}, error)
+	VisitVarExpr(expr *VarExpr) (interface{}, error)
 }
 type AssignExpr struct {
-	Name  *Token
-	Value Expr
+	Name *Token
+	Val  Expr
 }
 
-func NewAssignExpr(Name *Token, Value Expr) *AssignExpr {
-	return &AssignExpr{Name, Value}
+func NewAssignExpr(Name *Token, Val Expr) *AssignExpr {
+	return &AssignExpr{Name, Val}
 }
 func (expr *AssignExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 	return visitor.VisitAssignExpr(expr)
 }
 
 type BinaryExpr struct {
-	Op    *Token
-	Left  Expr
-	Right Expr
+	Op  *Token
+	Lhs Expr
+	Rhs Expr
 }
 
-func NewBinaryExpr(Op *Token, Left Expr, Right Expr) *BinaryExpr {
-	return &BinaryExpr{Op, Left, Right}
+func NewBinaryExpr(Op *Token, Lhs Expr, Rhs Expr) *BinaryExpr {
+	return &BinaryExpr{Op, Lhs, Rhs}
 }
 func (expr *BinaryExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 	return visitor.VisitBinaryExpr(expr)
 }
 
-type GroupingExpr struct {
-	Expression Expr
+type GroupExpr struct {
+	Expr Expr
 }
 
-func NewGroupingExpr(Expression Expr) *GroupingExpr {
-	return &GroupingExpr{Expression}
+func NewGroupExpr(Expr Expr) *GroupExpr {
+	return &GroupExpr{Expr}
 }
-func (expr *GroupingExpr) Accept(visitor ExprVisitor) (interface{}, error) {
-	return visitor.VisitGroupingExpr(expr)
+func (expr *GroupExpr) Accept(visitor ExprVisitor) (interface{}, error) {
+	return visitor.VisitGroupExpr(expr)
 }
 
 type LiteralExpr struct {
-	Value interface{}
+	Val interface{}
 }
 
-func NewLiteralExpr(Value interface{}) *LiteralExpr {
-	return &LiteralExpr{Value}
+func NewLiteralExpr(Val interface{}) *LiteralExpr {
+	return &LiteralExpr{Val}
 }
 func (expr *LiteralExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 	return visitor.VisitLiteralExpr(expr)
 }
 
-type UnaryExpr struct {
-	Op         *Token
-	Expression Expr
+type LogicalExpr struct {
+	Op  *Token
+	Lhs Expr
+	Rhs Expr
 }
 
-func NewUnaryExpr(Op *Token, Expression Expr) *UnaryExpr {
-	return &UnaryExpr{Op, Expression}
+func NewLogicalExpr(Op *Token, Lhs Expr, Rhs Expr) *LogicalExpr {
+	return &LogicalExpr{Op, Lhs, Rhs}
+}
+func (expr *LogicalExpr) Accept(visitor ExprVisitor) (interface{}, error) {
+	return visitor.VisitLogicalExpr(expr)
+}
+
+type UnaryExpr struct {
+	Op   *Token
+	Expr Expr
+}
+
+func NewUnaryExpr(Op *Token, Expr Expr) *UnaryExpr {
+	return &UnaryExpr{Op, Expr}
 }
 func (expr *UnaryExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 	return visitor.VisitUnaryExpr(expr)
 }
 
-type VariableExpr struct {
+type VarExpr struct {
 	Name *Token
 }
 
-func NewVariableExpr(Name *Token) *VariableExpr {
-	return &VariableExpr{Name}
+func NewVarExpr(Name *Token) *VarExpr {
+	return &VarExpr{Name}
 }
-func (expr *VariableExpr) Accept(visitor ExprVisitor) (interface{}, error) {
-	return visitor.VisitVariableExpr(expr)
+func (expr *VarExpr) Accept(visitor ExprVisitor) (interface{}, error) {
+	return visitor.VisitVarExpr(expr)
 }

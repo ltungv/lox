@@ -18,18 +18,21 @@ func main() {
 	outputDir := os.Args[1]
 	// we do it the scripting way, instead of having types support from Go stdlib
 	expressionTypes := []string{
-		"Assign: Name *Token, Value Expr",
-		"Binary: Op *Token, Left Expr, Right Expr",
-		"Grouping: Expression Expr",
-		"Literal: Value interface{}",
-		"Unary: Op *Token, Expression Expr",
-		"Variable: Name *Token",
+		"Assign: Name *Token, Val Expr",
+		"Binary: Op *Token, Lhs Expr, Rhs Expr",
+		"Group: Expr Expr",
+		"Literal: Val interface{}",
+		"Logical: Op *Token, Lhs Expr, Rhs Expr",
+		"Unary: Op *Token, Expr Expr",
+		"Var: Name *Token",
 	}
 	statementTypes := []string{
-		"Block: Statements []Stmt",
-		"Expression: Expression Expr",
-		"Print: Expression Expr",
-		"Var: Name *Token, Initializer Expr",
+		"Block: Stmts []Stmt",
+		"Expr: Expr Expr",
+		"If: Cond Expr, ThenBranch Stmt, ElseBranch Stmt",
+		"Print: Expr Expr",
+		"Var: Name *Token, Init Expr",
+		"While: Cond Expr, Body Stmt",
 	}
 
 	defineAst(outputDir, "Expr", expressionTypes)

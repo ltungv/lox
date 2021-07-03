@@ -5,51 +5,78 @@ type Stmt interface {
 }
 type StmtVisitor interface {
 	VisitBlockStmt(stmt *BlockStmt) (interface{}, error)
-	VisitExpressionStmt(stmt *ExpressionStmt) (interface{}, error)
+	VisitExprStmt(stmt *ExprStmt) (interface{}, error)
+	VisitIfStmt(stmt *IfStmt) (interface{}, error)
 	VisitPrintStmt(stmt *PrintStmt) (interface{}, error)
 	VisitVarStmt(stmt *VarStmt) (interface{}, error)
+	VisitWhileStmt(stmt *WhileStmt) (interface{}, error)
 }
 type BlockStmt struct {
-	Statements []Stmt
+	Stmts []Stmt
 }
 
-func NewBlockStmt(Statements []Stmt) *BlockStmt {
-	return &BlockStmt{Statements}
+func NewBlockStmt(Stmts []Stmt) *BlockStmt {
+	return &BlockStmt{Stmts}
 }
 func (stmt *BlockStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitBlockStmt(stmt)
 }
 
-type ExpressionStmt struct {
-	Expression Expr
+type ExprStmt struct {
+	Expr Expr
 }
 
-func NewExpressionStmt(Expression Expr) *ExpressionStmt {
-	return &ExpressionStmt{Expression}
+func NewExprStmt(Expr Expr) *ExprStmt {
+	return &ExprStmt{Expr}
 }
-func (stmt *ExpressionStmt) Accept(visitor StmtVisitor) (interface{}, error) {
-	return visitor.VisitExpressionStmt(stmt)
+func (stmt *ExprStmt) Accept(visitor StmtVisitor) (interface{}, error) {
+	return visitor.VisitExprStmt(stmt)
+}
+
+type IfStmt struct {
+	Cond       Expr
+	ThenBranch Stmt
+	ElseBranch Stmt
+}
+
+func NewIfStmt(Cond Expr, ThenBranch Stmt, ElseBranch Stmt) *IfStmt {
+	return &IfStmt{Cond, ThenBranch, ElseBranch}
+}
+func (stmt *IfStmt) Accept(visitor StmtVisitor) (interface{}, error) {
+	return visitor.VisitIfStmt(stmt)
 }
 
 type PrintStmt struct {
-	Expression Expr
+	Expr Expr
 }
 
-func NewPrintStmt(Expression Expr) *PrintStmt {
-	return &PrintStmt{Expression}
+func NewPrintStmt(Expr Expr) *PrintStmt {
+	return &PrintStmt{Expr}
 }
 func (stmt *PrintStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitPrintStmt(stmt)
 }
 
 type VarStmt struct {
-	Name        *Token
-	Initializer Expr
+	Name *Token
+	Init Expr
 }
 
-func NewVarStmt(Name *Token, Initializer Expr) *VarStmt {
-	return &VarStmt{Name, Initializer}
+func NewVarStmt(Name *Token, Init Expr) *VarStmt {
+	return &VarStmt{Name, Init}
 }
 func (stmt *VarStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitVarStmt(stmt)
+}
+
+type WhileStmt struct {
+	Cond Expr
+	Body Stmt
+}
+
+func NewWhileStmt(Cond Expr, Body Stmt) *WhileStmt {
+	return &WhileStmt{Cond, Body}
+}
+func (stmt *WhileStmt) Accept(visitor StmtVisitor) (interface{}, error) {
+	return visitor.VisitWhileStmt(stmt)
 }

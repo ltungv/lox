@@ -7,28 +7,37 @@ import "fmt"
 //
 // Grammar
 //
-//	program --> declaration* EOF ;
-//	declaration --> varDeclaration
-//	              | statement
-//	varDeclaration --> "var" IDENTIFIER ( "=" expression )? ";" ;
-//	statement --> block
-//	            | expressionStatement
-//	            | printStatement ;
-//	block --> "{" declaration* "}" ;
-//  expressionStatement --> expression ";" ;
-//  printStatement --> "print" expression ";" ;
-//	expression --> assignment ;
-//	assignment --> IDENTIFIER "=" expression ";"
-//	             | equality ;
-//	equality --> comparison ( ( "!=" | "==" ) comparison )* ;
+//	program    --> decl* EOF ;
+//	decl       --> varDecl
+//	             | stmt
+//
+//	stmt       --> block
+//	             | exprStmt
+//	             | forStmt
+//	             | ifStmt
+//	             | printStmt
+//	             | whileStmt
+//	block      --> "{" decl* "}" ;
+//	exprStmt   --> expr ";" ;
+//	forStmt  --> "for" "(" ( varDecl | exprStmt | ";" ) expr? ";" expr? ")" stmt ;
+//	ifStmt     --> "if" "(" expr ")" stmt ( "else" stmt )? ;
+//	printStmt  --> "print" expr ";" ;
+//	whileStmt  --> "while" "(" expr ")" stmt ;
+//
+//	expr       --> assign ;
+//	assign     --> IDENTIFIER "=" expr ";"
+//	             | or ;
+//	or         --> and ( "or" and )* ;
+//	and        --> equality ( "and" equality )* ;
+//	equality   --> comparison ( ( "!=" | "==" ) comparison )* ;
 //	comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-//	term --> factor ( ( "-" | "+" ) factor )* ;
-//	factor --> unary ( ( "/" | "*" ) unary )* ;
-//	unary --> ( "!" | "-" | "+" | "/" | "*" ) unary
-//	        | primary ;
-//	primary --> NUMBER | STRING | IDENTIFIER
-//	          | "true" | "false" | "nil"
-//	          | "(" expression ")" ;
+//	term       --> factor ( ( "-" | "+" ) factor )* ;
+//	factor     --> unary ( ( "/" | "*" ) unary )* ;
+//	unary      --> ( "!" | "-" | "+" | "/" | "*" ) unary
+//	             | primary ;
+//	primary    --> NUMBER | STRING | IDENTIFIER
+//	             | "true" | "false" | "nil"
+//	             | "(" expr ")" ;
 //
 // In our unary rule for, we our accepting three unary operators that are not supported
 // by the interpreter so we can produce better error
@@ -47,24 +56,22 @@ func NewParser(tokens []*Token, reporter Reporter) *Parser {
 }
 
 func (parser *Parser) Parse() []Stmt {
-	var statements []Stmt
+	var stmts []Stmt
 	for !parser.isEOF() {
-		stmt := parser.declaration()
-		statements = append(statements, stmt)
+		stmt := parser.decl()
+		stmts = append(stmts, stmt)
 	}
-	return statements
+	return stmts
 }
 
-// declaration --> varDeclaration
-//               | statement
-func (parser *Parser) declaration() Stmt {
+func (parser *Parser) decl() Stmt {
 	var stmt Stmt
 	var err error
 
 	if parser.match(VAR) {
-		stmt, err = parser.varDeclaration()
+		stmt, err = parser.varDecl()
 	} else {
-		stmt, err = parser.statement()
+		stmt, err = parser.stmt()
 	}
 
 	if err != nil {
@@ -75,8 +82,7 @@ func (parser *Parser) declaration() Stmt {
 	return stmt
 }
 
-// varDeclaration --> "var" IDENTIFIER ( "=" expression )? ";" ;
-func (parser *Parser) varDeclaration() (Stmt, error) {
+func (parser *Parser) varDecl() (Stmt, error) {
 	name, err := parser.consume(IDENTIFIER, "Expect variable name.")
 	if err != nil {
 		return nil, err
@@ -85,7 +91,7 @@ func (parser *Parser) varDeclaration() (Stmt, error) {
 	var initializer Expr
 	if parser.match(EQUAL) {
 		var err error
-		initializer, err = parser.expression()
+		initializer, err = parser.expr()
 		if err != nil {
 			return nil, err
 		}
@@ -98,26 +104,148 @@ func (parser *Parser) varDeclaration() (Stmt, error) {
 	return NewVarStmt(name, initializer), nil
 }
 
-// statement --> block
-//             | expressionStatement
-//             | printStatement ;
-func (parser *Parser) statement() (Stmt, error) {
+func (parser *Parser) stmt() (Stmt, error) {
+	if parser.match(FOR) {
+		return parser.forStmt()
+	}
+	if parser.match(WHILE) {
+		return parser.whileStmt()
+	}
+	if parser.match(IF) {
+		return parser.ifStmt()
+	}
 	if parser.match(PRINT) {
-		return parser.printStatement()
+		return parser.printStmt()
 	}
 	if parser.match(LEFT_BRACE) {
-		statements, err := parser.block()
+		stmts, err := parser.block()
 		if err != nil {
 			return nil, err
 		}
-		return NewBlockStmt(statements), nil
+		return NewBlockStmt(stmts), nil
 	}
-	return parser.expressionStatement()
+	return parser.exprStmt()
 }
 
-// printStatement --> "print" expression ";" ;
-func (parser *Parser) printStatement() (Stmt, error) {
-	expr, err := parser.expression()
+func (parser *Parser) block() ([]Stmt, error) {
+	var stmts []Stmt
+	for !parser.check(RIGHT_BRACE) && !parser.isEOF() {
+		stmt := parser.decl()
+		stmts = append(stmts, stmt)
+	}
+	_, err := parser.consume(RIGHT_BRACE, "Expect '}' after block.")
+	if err != nil {
+		return nil, err
+	}
+	return stmts, nil
+}
+
+func (parser *Parser) exprStmt() (Stmt, error) {
+	expr, err := parser.expr()
+	if err != nil {
+		return nil, err
+	}
+	_, err = parser.consume(SEMICOLON, "Expect ';' after expression.")
+	if err != nil {
+		return nil, err
+	}
+	return NewExprStmt(expr), nil
+}
+
+func (parser *Parser) forStmt() (Stmt, error) {
+	_, err := parser.consume(LEFT_PAREN, "Expect '(' after 'for'.")
+	if err != nil {
+		return nil, err
+	}
+	// initializer clause
+	var init Stmt
+	if parser.match(SEMICOLON) {
+		// do nothing
+	} else if parser.match(VAR) {
+		init, err = parser.varDecl()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		init, err = parser.exprStmt()
+		if err != nil {
+			return nil, err
+		}
+	}
+	// conditional clause
+	var cond Expr
+	if !parser.check(SEMICOLON) {
+		cond, err = parser.expr()
+		if err != nil {
+			return nil, err
+		}
+	}
+	_, err = parser.consume(SEMICOLON, "Expect ';' after loop condition.")
+	if err != nil {
+		return nil, err
+	}
+	// increment clause
+	var inc Expr
+	if !parser.check(RIGHT_PAREN) {
+		inc, err = parser.expr()
+		if err != nil {
+			return nil, err
+		}
+	}
+	_, err = parser.consume(RIGHT_PAREN, "Expect ')' after for clauses.")
+	if err != nil {
+		return nil, err
+	}
+
+	// desugaring for statement by building the AST by hand
+	body, err := parser.stmt()
+	if err != nil {
+		return nil, err
+	}
+	if inc != nil {
+		body = NewBlockStmt([]Stmt{body, NewExprStmt(inc)})
+	}
+	if cond == nil {
+		cond = NewLiteralExpr(true)
+	}
+	body = NewWhileStmt(cond, body)
+	if init != nil {
+		body = NewBlockStmt([]Stmt{init, body})
+	}
+	return body, nil
+}
+
+func (parser *Parser) ifStmt() (Stmt, error) {
+	_, err := parser.consume(LEFT_PAREN, "Expect '(' after 'if'.")
+	if err != nil {
+		return nil, err
+	}
+	cond, err := parser.expr()
+	if err != nil {
+		return nil, err
+	}
+	_, err = parser.consume(RIGHT_PAREN, "Expect ')' after if condition.")
+	if err != nil {
+		return nil, err
+	}
+
+	thenBranch, err := parser.stmt()
+	if err != nil {
+		return nil, err
+	}
+
+	var elseBranch Stmt
+	if parser.match(ELSE) {
+		elseBranch, err = parser.stmt()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return NewIfStmt(cond, thenBranch, elseBranch), nil
+}
+
+func (parser *Parser) printStmt() (Stmt, error) {
+	expr, err := parser.expr()
 	if err != nil {
 		return nil, err
 	}
@@ -128,52 +256,43 @@ func (parser *Parser) printStatement() (Stmt, error) {
 	return NewPrintStmt(expr), nil
 }
 
-// block --> "{" declaration* "}" ;
-func (parser *Parser) block() ([]Stmt, error) {
-	var statements []Stmt
-	for !parser.check(RIGHT_BRACE) && !parser.isEOF() {
-		stmt := parser.declaration()
-		statements = append(statements, stmt)
-	}
-	_, err := parser.consume(RIGHT_BRACE, "Expect '}' after block.")
+func (parser *Parser) whileStmt() (Stmt, error) {
+	_, err := parser.consume(LEFT_PAREN, "Expect '(' after 'while'.")
 	if err != nil {
 		return nil, err
 	}
-	return statements, nil
-}
-
-// expressionStatement --> expression ";" ;
-func (parser *Parser) expressionStatement() (Stmt, error) {
-	expr, err := parser.expression()
+	cond, err := parser.expr()
 	if err != nil {
 		return nil, err
 	}
-	_, err = parser.consume(SEMICOLON, "Expect ';' after expression.")
+	_, err = parser.consume(RIGHT_PAREN, "Expect ')' after condition.")
 	if err != nil {
 		return nil, err
 	}
-	return NewExpressionStmt(expr), nil
+
+	body, err := parser.stmt()
+	if err != nil {
+		return nil, err
+	}
+	return NewWhileStmt(cond, body), nil
 }
 
-// expression --> assignment ;
-func (parser *Parser) expression() (Expr, error) {
-	return parser.assignment()
+func (parser *Parser) expr() (Expr, error) {
+	return parser.assign()
 }
 
-// assignment --> IDENTIFIER "=" expression ";"
-//              | equality ;
-func (parser *Parser) assignment() (Expr, error) {
-	lhs, err := parser.equality()
+func (parser *Parser) assign() (Expr, error) {
+	lhs, err := parser.or()
 	if err != nil {
 		return nil, err
 	}
 	if parser.match(EQUAL) {
 		op := parser.prev()
-		rhs, err := parser.assignment()
+		rhs, err := parser.assign()
 		if err != nil {
 			return nil, err
 		}
-		if lhs, ok := lhs.(*VariableExpr); ok {
+		if lhs, ok := lhs.(*VarExpr); ok {
 			return NewAssignExpr(lhs.Name, rhs), nil
 		}
 		parser.reporter.Report(NewParseError(op, "Invalid assignment target."))
@@ -181,79 +300,102 @@ func (parser *Parser) assignment() (Expr, error) {
 	return lhs, nil
 }
 
-// Creates a left-associative nested tree of binary operator nodes. Match a
-// higher precedence rule `comparison` if does not hits "!=" or "==".
-//
-// equality --> comparison ( ( "!=" | "==" ) comparison )* ;
+func (parser *Parser) or() (Expr, error) {
+	lhs, err := parser.and()
+	if err != nil {
+		return nil, err
+	}
+	for parser.match(OR) {
+		op := parser.prev()
+		rhs, err := parser.and()
+		if err != nil {
+			return nil, err
+		}
+		lhs = NewLogicalExpr(op, lhs, rhs)
+	}
+	return lhs, nil
+}
+
+func (parser *Parser) and() (Expr, error) {
+	lhs, err := parser.equality()
+	if err != nil {
+		return nil, err
+	}
+	for parser.match(AND) {
+		op := parser.prev()
+		rhs, err := parser.equality()
+		if err != nil {
+			return nil, err
+		}
+		lhs = NewLogicalExpr(op, lhs, rhs)
+	}
+	return lhs, nil
+}
+
 func (parser *Parser) equality() (Expr, error) {
-	expr, err := parser.comparison()
+	lhs, err := parser.comparison()
 	if err != nil {
 		return nil, err
 	}
 	for parser.match(BANG_EQUAL, EQUAL_EQUAL) {
 		op := parser.prev()
-		right, err := parser.comparison()
+		rhs, err := parser.comparison()
 		if err != nil {
 			return nil, err
 		}
-		expr = NewBinaryExpr(op, expr, right)
+		lhs = NewBinaryExpr(op, lhs, rhs)
 	}
-	return expr, nil
+	return lhs, nil
 }
 
-// comparison --> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 func (parser *Parser) comparison() (Expr, error) {
-	expr, err := parser.term()
+	lhs, err := parser.term()
 	if err != nil {
 		return nil, err
 	}
 	for parser.match(GREATER, GREATER_EQUAL, LESS, LESS_EQUAL) {
 		op := parser.prev()
-		right, err := parser.term()
+		rhs, err := parser.term()
 		if err != nil {
 			return nil, err
 		}
-		expr = NewBinaryExpr(op, expr, right)
+		lhs = NewBinaryExpr(op, lhs, rhs)
 	}
-	return expr, nil
+	return lhs, nil
 }
 
-// term --> factor ( ( "-" | "+" ) factor )* ;
 func (parser *Parser) term() (Expr, error) {
-	expr, err := parser.factor()
+	lhs, err := parser.factor()
 	if err != nil {
 		return nil, err
 	}
 	for parser.match(MINUS, PLUS) {
 		op := parser.prev()
-		right, err := parser.factor()
+		rhs, err := parser.factor()
 		if err != nil {
 			return nil, err
 		}
-		expr = NewBinaryExpr(op, expr, right)
+		lhs = NewBinaryExpr(op, lhs, rhs)
 	}
-	return expr, nil
+	return lhs, nil
 }
 
-// factor --> unary ( ( "/" | "*" ) unary )* ;
 func (parser *Parser) factor() (Expr, error) {
-	expr, err := parser.unary()
+	lhs, err := parser.unary()
 	if err != nil {
 		return nil, err
 	}
 	for parser.match(SLASH, STAR) {
 		op := parser.prev()
-		right, err := parser.unary()
+		rhs, err := parser.unary()
 		if err != nil {
 			return nil, err
 		}
-		expr = NewBinaryExpr(op, expr, right)
+		lhs = NewBinaryExpr(op, lhs, rhs)
 	}
-	return expr, nil
+	return lhs, nil
 }
 
-// unary --> ( "!" | "-" | "+" | "/" | "*" ) unary
-//         | primary ;
 func (parser *Parser) unary() (Expr, error) {
 	if parser.match(BANG, MINUS, PLUS, SLASH, STAR) {
 		op := parser.prev()
@@ -274,7 +416,6 @@ func (parser *Parser) unary() (Expr, error) {
 	return parser.primary()
 }
 
-// primary --> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 func (parser *Parser) primary() (Expr, error) {
 	if parser.match(FALSE) {
 		return NewLiteralExpr(false), nil
@@ -289,10 +430,10 @@ func (parser *Parser) primary() (Expr, error) {
 		return NewLiteralExpr(parser.prev().Literal), nil
 	}
 	if parser.match(IDENTIFIER) {
-		return NewVariableExpr(parser.prev()), nil
+		return NewVarExpr(parser.prev()), nil
 	}
 	if parser.match(LEFT_PAREN) {
-		expr, err := parser.expression()
+		expr, err := parser.expr()
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +441,7 @@ func (parser *Parser) primary() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewGroupingExpr(expr), nil
+		return NewGroupExpr(expr), nil
 	}
 	return nil, NewParseError(parser.peek(), "Expect expression.")
 }
