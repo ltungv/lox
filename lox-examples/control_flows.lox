@@ -11,3 +11,5 @@ fun controlFlows(n) {
     }
   }
 }
+
+controlFlows(50);

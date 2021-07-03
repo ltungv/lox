@@ -6,8 +6,10 @@ type Stmt interface {
 type StmtVisitor interface {
 	VisitBlockStmt(stmt *BlockStmt) (interface{}, error)
 	VisitExprStmt(stmt *ExprStmt) (interface{}, error)
+	VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error)
 	VisitIfStmt(stmt *IfStmt) (interface{}, error)
 	VisitPrintStmt(stmt *PrintStmt) (interface{}, error)
+	VisitReturnStmt(stmt *ReturnStmt) (interface{}, error)
 	VisitVarStmt(stmt *VarStmt) (interface{}, error)
 	VisitWhileStmt(stmt *WhileStmt) (interface{}, error)
 }
@@ -31,6 +33,19 @@ func NewExprStmt(Expr Expr) *ExprStmt {
 }
 func (stmt *ExprStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitExprStmt(stmt)
+}
+
+type FunctionStmt struct {
+	Name   *loxToken
+	Params []*loxToken
+	Body   []Stmt
+}
+
+func NewFunctionStmt(Name *loxToken, Params []*loxToken, Body []Stmt) *FunctionStmt {
+	return &FunctionStmt{Name, Params, Body}
+}
+func (stmt *FunctionStmt) Accept(visitor StmtVisitor) (interface{}, error) {
+	return visitor.VisitFunctionStmt(stmt)
 }
 
 type IfStmt struct {
@@ -57,12 +72,24 @@ func (stmt *PrintStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitPrintStmt(stmt)
 }
 
+type ReturnStmt struct {
+	Keyword *loxToken
+	Val     Expr
+}
+
+func NewReturnStmt(Keyword *loxToken, Val Expr) *ReturnStmt {
+	return &ReturnStmt{Keyword, Val}
+}
+func (stmt *ReturnStmt) Accept(visitor StmtVisitor) (interface{}, error) {
+	return visitor.VisitReturnStmt(stmt)
+}
+
 type VarStmt struct {
-	Name *Token
+	Name *loxToken
 	Init Expr
 }
 
-func NewVarStmt(Name *Token, Init Expr) *VarStmt {
+func NewVarStmt(Name *loxToken, Init Expr) *VarStmt {
 	return &VarStmt{Name, Init}
 }
 func (stmt *VarStmt) Accept(visitor StmtVisitor) (interface{}, error) {

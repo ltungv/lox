@@ -8,14 +8,24 @@ import (
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
 // struct implements ExprVisitor
 type Interpreter struct {
-	environment *Environment
+	globals     *loxEnvironment
+	environment *loxEnvironment
 	output      io.Writer
 	reporter    Reporter
 	isREPL      bool
 }
 
 func NewInterpreter(output io.Writer, reporter Reporter, isREPL bool) *Interpreter {
-	return &Interpreter{NewEnvironment(nil), output, reporter, isREPL}
+	env := newLoxEnvironment(nil)
+	env.define("clock", new(loxNativeFnClock))
+
+	interpreter := new(Interpreter)
+	interpreter.globals = env
+	interpreter.environment = env
+	interpreter.output = output
+	interpreter.reporter = reporter
+	interpreter.isREPL = isREPL
+	return interpreter
 }
 
 func (in *Interpreter) Interpret(statements []Stmt) {
@@ -28,7 +38,7 @@ func (in *Interpreter) Interpret(statements []Stmt) {
 }
 
 func (in *Interpreter) VisitBlockStmt(stmt *BlockStmt) (interface{}, error) {
-	return nil, in.execBlock(stmt.Stmts, NewEnvironment(in.environment))
+	return nil, in.execBlock(stmt.Stmts, newLoxEnvironment(in.environment))
 }
 
 func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
@@ -37,10 +47,19 @@ func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 		return nil, err
 	}
 	if in.isREPL {
-		if _, ok := stmt.Expr.(*AssignExpr); !ok {
+		switch stmt.Expr.(type) {
+		case *AssignExpr, *CallExpr:
+			/* expressions of these types are not printed */
+		default:
 			fmt.Fprintln(in.output, stringify(expr))
 		}
 	}
+	return nil, nil
+}
+
+func (in *Interpreter) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
+	fn := newLoxFn(stmt, in.environment)
+	in.environment.define(stmt.Name.lexeme, fn)
 	return nil, nil
 }
 
@@ -51,7 +70,7 @@ func (in *Interpreter) VisitIfStmt(stmt *IfStmt) (interface{}, error) {
 	}
 	if isTruthy(cond) {
 		return in.exec(stmt.ThenBranch)
-	} else {
+	} else if stmt.ElseBranch != nil {
 		return in.exec(stmt.ElseBranch)
 	}
 	return nil, nil
@@ -75,8 +94,20 @@ func (in *Interpreter) VisitVarStmt(stmt *VarStmt) (interface{}, error) {
 			return nil, err
 		}
 	}
-	in.environment.Define(stmt.Name, initVal)
+	in.environment.define(stmt.Name.lexeme, initVal)
 	return nil, nil
+}
+
+func (in *Interpreter) VisitReturnStmt(stmt *ReturnStmt) (interface{}, error) {
+	var val interface{}
+	var err error
+	if stmt.Val != nil {
+		val, err = in.eval(stmt.Val)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, newLoxReturn(val)
 }
 
 func (in *Interpreter) VisitWhileStmt(stmt *WhileStmt) (interface{}, error) {
@@ -100,7 +131,7 @@ func (in *Interpreter) VisitAssignExpr(expr *AssignExpr) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = in.environment.Assign(expr.Name, val)
+	err = in.environment.assign(expr.Name, val)
 	return nil, err
 }
 
@@ -114,61 +145,61 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 		return nil, err
 	}
 
-	switch expr.Op.Typ {
-	case BANG_EQUAL:
+	switch expr.Op.typ {
+	case tokenBangEqual:
 		result := lhs != rhs
 		return result, nil
 
-	case EQUAL_EQUAL:
+	case tokenEqualEqual:
 		result := lhs == rhs
 		return result, nil
 
-	case GREATER:
+	case tokenGreater:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum > rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 
-	case GREATER_EQUAL:
+	case tokenGreaterEqual:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum >= rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 
-	case LESS:
+	case tokenLess:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum < rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 
-	case LESS_EQUAL:
+	case tokenLessEqual:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum <= rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 
-	case MINUS:
+	case tokenMinus:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum - rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 
-	case PLUS:
+	case tokenPlus:
 		leftStr, okLeftStr := lhs.(string)
 		rightStr, okRightStr := rhs.(string)
 		if okLeftStr && okRightStr {
@@ -182,27 +213,68 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			return result, nil
 		}
 
-		return nil, NewRuntimeError(expr.Op, "Operands must be two numbers or two strings.")
+		return nil, newRuntimeError(expr.Op, "Operands must be two numbers or two strings.")
 
-	case SLASH:
+	case tokenSlash:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum / rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 
-	case STAR:
+	case tokenStar:
 		leftNum, okLeftNum := lhs.(float64)
 		rightNum, okRightNum := rhs.(float64)
 		if okLeftNum && okRightNum {
 			result := leftNum * rightNum
 			return result, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
 	}
 	panic("Unreachable")
+}
+
+func (in *Interpreter) VisitCallExpr(expr *CallExpr) (interface{}, error) {
+	callee, err := in.eval(expr.Callee)
+	if err != nil {
+		return nil, err
+	}
+
+	/*
+		NOTE: Here we evaluate each expressions in order. This is a subtle semantic
+		choice. The order in which these arguments are evaluated could be user
+		visible, because expressions can have side-effects. Languages like C and Scheme
+		don't specify an order, so compilers can freely rearrange them for efficiency,
+		but users may be unpleasantly surprised if arguments aren't evaluated in the
+		order they expected.
+	*/
+	var args []interface{}
+	for _, arg := range expr.Args {
+		argVal, err := in.eval(arg)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, argVal)
+	}
+
+	callable, isCallable := callee.(loxCallable)
+	if !isCallable {
+		return nil, newRuntimeError(expr.Paren, "Can only call functions and classes.")
+	}
+	/*
+		NOTE: The arity check could be done within the Call() method. But we have lots
+		of different Lox's objects that can be called, resulting in the check has to
+		be reimplemented by each object. We only has to do it once, if it's performed
+		here.
+	*/
+	if len(args) != callable.arity() {
+		return nil, newRuntimeError(expr.Paren, fmt.Sprintf(
+			"Expected %d arguments but got %d.", callable.arity(), len(args),
+		))
+	}
+	return callable.call(in, args)
 }
 
 func (in *Interpreter) VisitGroupExpr(expr *GroupExpr) (interface{}, error) {
@@ -219,12 +291,12 @@ func (in *Interpreter) VisitLogicalExpr(expr *LogicalExpr) (interface{}, error) 
 		return nil, err
 	}
 
-	switch expr.Op.Typ {
-	case OR:
+	switch expr.Op.typ {
+	case tokenOr:
 		if isTruthy(lhs) {
 			return lhs, nil
 		}
-	case AND:
+	case tokenAnd:
 		if !isTruthy(lhs) {
 			return lhs, nil
 		}
@@ -241,30 +313,31 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 		return nil, err
 	}
 
-	switch expr.Op.Typ {
-	case BANG:
+	switch expr.Op.typ {
+	case tokenBang:
 		return !isTruthy(exprVal), nil
-	case MINUS:
+	case tokenMinus:
 		if exprNum, ok := exprVal.(float64); ok {
 			return -exprNum, nil
 		}
-		return nil, NewRuntimeError(expr.Op, "Operand must be a number.")
+		return nil, newRuntimeError(expr.Op, "Operand must be a number.")
 	}
 	panic("Unreachable")
 }
 
 func (in *Interpreter) VisitVarExpr(expr *VarExpr) (interface{}, error) {
-	val, err := in.environment.Get(expr.Name)
+	val, err := in.environment.get(expr.Name)
 	if err != nil {
 		return nil, err
 	}
 	return val, nil
 }
 
-func (in *Interpreter) execBlock(statements []Stmt, environment *Environment) error {
+func (in *Interpreter) execBlock(statements []Stmt, environment *loxEnvironment) error {
+	prevEnv := in.environment
 	in.environment = environment
 	defer func() {
-		in.environment = environment.enclosing
+		in.environment = prevEnv
 	}()
 	for _, stmt := range statements {
 		if _, err := in.exec(stmt); err != nil {

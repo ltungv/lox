@@ -24,12 +24,16 @@ type SimpleReporter struct {
 }
 
 func NewSimpleReporter(writer io.Writer) Reporter {
-	return &SimpleReporter{writer, false, false}
+	reporter := new(SimpleReporter)
+	reporter.writer = writer
+	reporter.hadErr = false
+	reporter.hadRuntimeErr = false
+	return reporter
 }
 
 func (reporter *SimpleReporter) Report(err error) {
 	fmt.Fprintln(reporter.writer, err)
-	if _, isRuntimeErr := err.(*RuntimeError); isRuntimeErr {
+	if _, isRuntimeErr := err.(*runtimeError); isRuntimeErr {
 		reporter.hadRuntimeErr = true
 	} else {
 		reporter.hadErr = true

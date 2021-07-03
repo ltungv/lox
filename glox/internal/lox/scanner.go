@@ -2,7 +2,6 @@ package lox
 
 import (
 	"strconv"
-	"strings"
 	"unicode"
 )
 
@@ -12,18 +11,25 @@ type Scanner struct {
 	start    int
 	current  int
 	source   []rune
-	tokens   []*Token
+	tokens   []*loxToken
 	reporter Reporter
 }
 
 // New creates a new Lox token scanner
 func NewScanner(source []rune, reporter Reporter) *Scanner {
-	return &Scanner{1, 0, 0, source, make([]*Token, 0), reporter}
+	scanner := new(Scanner)
+	scanner.line = 1
+	scanner.start = 0
+	scanner.current = 0
+	scanner.source = source
+	scanner.tokens = make([]*loxToken, 0)
+	scanner.reporter = reporter
+	return scanner
 }
 
 // Scan reads the source and collect all the tokens that were found from the
 // source
-func (scanner *Scanner) Scan() []*Token {
+func (scanner *Scanner) Scan() []*loxToken {
 	if len(scanner.tokens) != 0 {
 		return scanner.tokens
 	}
@@ -37,49 +43,49 @@ func (scanner *Scanner) Scan() []*Token {
 			scanner.line++
 		// Single character tokens
 		case '(':
-			scanner.addToken(LEFT_PAREN, nil)
+			scanner.addToken(tokenLeftParen, nil)
 		case ')':
-			scanner.addToken(RIGHT_PAREN, nil)
+			scanner.addToken(tokenRightParen, nil)
 		case '{':
-			scanner.addToken(LEFT_BRACE, nil)
+			scanner.addToken(tokenLeftBrace, nil)
 		case '}':
-			scanner.addToken(RIGHT_BRACE, nil)
+			scanner.addToken(tokenRightBrace, nil)
 		case ',':
-			scanner.addToken(COMMA, nil)
+			scanner.addToken(tokenComma, nil)
 		case '.':
-			scanner.addToken(DOT, nil)
+			scanner.addToken(tokenDot, nil)
 		case '-':
-			scanner.addToken(MINUS, nil)
+			scanner.addToken(tokenMinus, nil)
 		case '+':
-			scanner.addToken(PLUS, nil)
+			scanner.addToken(tokenPlus, nil)
 		case ';':
-			scanner.addToken(SEMICOLON, nil)
+			scanner.addToken(tokenSemicolon, nil)
 		case '*':
-			scanner.addToken(STAR, nil)
+			scanner.addToken(tokenStar, nil)
 		// Double character tokens
 		case '!':
 			if scanner.match('=') {
-				scanner.addToken(BANG_EQUAL, nil)
+				scanner.addToken(tokenBangEqual, nil)
 			} else {
-				scanner.addToken(BANG, nil)
+				scanner.addToken(tokenBang, nil)
 			}
 		case '=':
 			if scanner.match('=') {
-				scanner.addToken(EQUAL_EQUAL, nil)
+				scanner.addToken(tokenEqualEqual, nil)
 			} else {
-				scanner.addToken(EQUAL, nil)
+				scanner.addToken(tokenEqual, nil)
 			}
 		case '<':
 			if scanner.match('=') {
-				scanner.addToken(LESS_EQUAL, nil)
+				scanner.addToken(tokenLessEqual, nil)
 			} else {
-				scanner.addToken(LESS, nil)
+				scanner.addToken(tokenLess, nil)
 			}
 		case '>':
 			if scanner.match('=') {
-				scanner.addToken(GREATER_EQUAL, nil)
+				scanner.addToken(tokenGreaterEqual, nil)
 			} else {
-				scanner.addToken(GREATER, nil)
+				scanner.addToken(tokenGreater, nil)
 			}
 		// Long lexemes
 		case '/':
@@ -92,7 +98,7 @@ func (scanner *Scanner) Scan() []*Token {
 			} else if scanner.match('*') {
 				scanner.scanMultilineComment()
 			} else {
-				scanner.addToken(SLASH, nil)
+				scanner.addToken(tokenSlash, nil)
 			}
 		// Literals
 		case '"':
@@ -104,14 +110,14 @@ func (scanner *Scanner) Scan() []*Token {
 				scanner.scanIdentifier()
 			} else {
 				scanner.reporter.Report(
-					NewScanError(scanner.line, "Unexpected character."),
+					newScanError(scanner.line, "Unexpected character."),
 				)
 			}
 		}
 	}
 	scanner.tokens = append(
 		scanner.tokens,
-		NewToken(EOF, "", nil, scanner.line),
+		newLoxToken(tokenEOF, "", nil, scanner.line),
 	)
 	return scanner.tokens
 }
@@ -130,10 +136,10 @@ func (scanner *Scanner) scanString() {
 		scanner.advance()
 		// content between '"' pair
 		literal := string(scanner.source[scanner.start+1 : scanner.current-1])
-		scanner.addToken(STRING, literal)
+		scanner.addToken(tokenString, literal)
 	} else {
 		scanner.reporter.Report(
-			NewScanError(scanner.line, "Unterminated string."),
+			newScanError(scanner.line, "Unterminated string."),
 		)
 	}
 }
@@ -155,18 +161,18 @@ func (scanner *Scanner) scanNumber() {
 	// NOTE: we're ignoring the error, since we have already verified that the
 	// lexeme contains a valid 64-bit floating point.
 	literal, _ := strconv.ParseFloat(lexeme, 64)
-	scanner.addToken(NUMBER, literal)
+	scanner.addToken(tokenNumber, literal)
 }
 
 func (scanner *Scanner) scanIdentifier() {
 	for isAlphanumeric(scanner.peek()) {
 		scanner.advance()
 	}
-	lexemeUpper := strings.ToUpper(string(scanner.source[scanner.start:scanner.current]))
-	if tokenType, isKeyword := Keywords[lexemeUpper]; isKeyword {
+	lexeme := string(scanner.source[scanner.start:scanner.current])
+	if tokenType, isKeyword := loxKeywords[lexeme]; isKeyword {
 		scanner.addToken(tokenType, nil)
 	} else {
-		scanner.addToken(IDENTIFIER, nil)
+		scanner.addToken(tokenIdentifier, nil)
 	}
 }
 
@@ -186,7 +192,7 @@ func (scanner *Scanner) scanMultilineComment() {
 			}
 		} else {
 			scanner.reporter.Report(
-				NewScanError(
+				newScanError(
 					scanner.line, "Unterminated multiline comment.",
 				),
 			)
@@ -197,9 +203,9 @@ func (scanner *Scanner) scanMultilineComment() {
 
 // addToken appends the lexeme from `start` to `current` as a token of the given
 // type and carries the given literal
-func (scanner *Scanner) addToken(typ TokenType, literal interface{}) {
+func (scanner *Scanner) addToken(typ loxTokenType, literal interface{}) {
 	lexeme := string(scanner.source[scanner.start:scanner.current])
-	tok := NewToken(typ, lexeme, literal, scanner.line)
+	tok := newLoxToken(typ, lexeme, literal, scanner.line)
 	scanner.tokens = append(scanner.tokens, tok)
 }
 
