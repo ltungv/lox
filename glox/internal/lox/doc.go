@@ -39,23 +39,10 @@ Grammars
 	primary    --> NUMBER | STRING | IDENTIFIER
 	             | "true" | "false" | "nil"
 	             | "(" expr ")" ;
-*/
-package lox
 
-/*
-Notes
-
-Unary rule has some matches for error generations:
+"unary" rule has some matches for error generations:
 + Unary '+' expressions are not supported.
 + Unary '/' expressions are not supported.
 + Unary '*' expressions are not supported.
-
-Handling function calls:
-+ "(" acts like a postfix operator that has higer precedence than any other
-operator.
-+ The grammar rule for function call is quite complex so it can handle cases when
-there's no argument, one argument, or multiple comma separated argument.
-+ The number of arguments are limited to 255 to simplified the bytecode
-representation of the bytecode interpreter
-+ Checking
 */
+package lox
