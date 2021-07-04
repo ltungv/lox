@@ -33,6 +33,13 @@ func run(script string, interpreter *lox.Interpreter, reporter lox.Reporter) {
 	if reporter.HadError() {
 		return
 	}
+
+	resolver := lox.NewResolver(interpreter, reporter)
+	resolver.Resolve(statements)
+	if reporter.HadError() {
+		return
+	}
+
 	interpreter.Interpret(statements)
 }
 

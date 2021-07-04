@@ -54,7 +54,7 @@ func (err *parseError) Error() string {
 	)
 }
 
-// RuntimerError represents any error that the interpreter detects when running
+// runtimeError represents any error that the interpreter detects when running
 type runtimeError struct {
 	token   *loxToken
 	message string
@@ -78,6 +78,37 @@ func (err *runtimeError) Error() string {
 
 	return fmt.Sprintf(
 		"[line %d] RuntimeError at %s: %s",
+		err.token.line,
+		loc,
+		err.message,
+	)
+}
+
+// ResolveError represents any error that the interpreter detects when resolving
+// the syntax tree
+type resolveError struct {
+	token   *loxToken
+	message string
+}
+
+// newResolveError creates a new ResolveError
+func newResolveError(token *loxToken, message string) error {
+	e := new(resolveError)
+	e.token = token
+	e.message = message
+	return e
+}
+
+func (err *resolveError) Error() string {
+	var loc string
+	if err.token.typ == tokenEOF {
+		loc = "end"
+	} else {
+		loc = "'" + err.token.lexeme + "'"
+	}
+
+	return fmt.Sprintf(
+		"[line %d] ResolveError at %s: %s",
 		err.token.line,
 		loc,
 		err.message,

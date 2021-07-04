@@ -3,6 +3,7 @@ package lox
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
@@ -10,6 +11,7 @@ import (
 type Interpreter struct {
 	globals     *loxEnvironment
 	environment *loxEnvironment
+	locals      map[Expr]int
 	output      io.Writer
 	reporter    Reporter
 	isREPL      bool
@@ -22,6 +24,7 @@ func NewInterpreter(output io.Writer, reporter Reporter, isREPL bool) *Interpret
 	interpreter := new(Interpreter)
 	interpreter.globals = env
 	interpreter.environment = env
+	interpreter.locals = make(map[Expr]int)
 	interpreter.output = output
 	interpreter.reporter = reporter
 	interpreter.isREPL = isREPL
@@ -35,6 +38,10 @@ func (in *Interpreter) Interpret(statements []Stmt) {
 			break
 		}
 	}
+}
+
+func (in *Interpreter) Resolve(expr Expr, steps int) {
+	in.locals[expr] = steps
 }
 
 func (in *Interpreter) VisitBlockStmt(stmt *BlockStmt) (interface{}, error) {
@@ -131,8 +138,13 @@ func (in *Interpreter) VisitAssignExpr(expr *AssignExpr) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = in.environment.assign(expr.Name, val)
-	return nil, err
+
+	if steps, ok := in.locals[expr]; ok {
+		in.environment.assignAt(steps, expr.Name, val)
+		return nil, nil
+	} else {
+		return nil, in.globals.assign(expr.Name, val)
+	}
 }
 
 func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
@@ -326,11 +338,11 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 }
 
 func (in *Interpreter) VisitVarExpr(expr *VarExpr) (interface{}, error) {
-	val, err := in.environment.get(expr.Name)
-	if err != nil {
-		return nil, err
+	if steps, ok := in.locals[expr]; ok {
+		return in.environment.getAt(steps, expr.Name.lexeme), nil
+	} else {
+		return in.globals.get(expr.Name)
 	}
-	return val, nil
 }
 
 func (in *Interpreter) execBlock(statements []Stmt, environment *loxEnvironment) error {
@@ -353,4 +365,93 @@ func (in *Interpreter) exec(stmt Stmt) (interface{}, error) {
 
 func (in *Interpreter) eval(expr Expr) (interface{}, error) {
 	return expr.Accept(in)
+}
+
+type loxReturn struct {
+	val interface{}
+}
+
+func newLoxReturn(val interface{}) *loxReturn {
+	r := new(loxReturn)
+	r.val = val
+	return r
+}
+
+func (r *loxReturn) Error() string {
+	return fmt.Sprintf("return %v", stringify(r.val))
+}
+
+// loxCallable is implemented by Lox's objects that can be called.
+type loxCallable interface {
+	arity() int
+	call(in *Interpreter, args []interface{}) (interface{}, error)
+}
+
+type loxNativeFnClock struct{}
+
+func (fn *loxNativeFnClock) arity() int {
+	return 0
+}
+
+func (fn *loxNativeFnClock) call(
+	in *Interpreter,
+	args []interface{},
+) (interface{}, error) {
+	return time.Since(time.Unix(0, 0)).Seconds(), nil
+}
+
+func (fn *loxNativeFnClock) String() string {
+	return "<native fn clock/0>"
+}
+
+// loxFn represents a lox function that can be called
+type loxFn struct {
+	decl    *FunctionStmt
+	closure *loxEnvironment
+}
+
+func newLoxFn(decl *FunctionStmt, closure *loxEnvironment) *loxFn {
+	fn := new(loxFn)
+	fn.decl = decl
+	fn.closure = closure
+	return fn
+}
+
+func (fn *loxFn) arity() int {
+	return len(fn.decl.Params)
+}
+
+func (fn *loxFn) call(
+	in *Interpreter,
+	args []interface{},
+) (interface{}, error) {
+	/*
+		A function encapsulates its parameters, which means each function get is
+		own environment where it stores the encapsulated variables. Each function
+		call dynamically creates a new environment, otherwise, recursion would break.
+		If there are multiple calls to the same function in play at the same time,
+		each needs its own environment, even though they are all calls to the same
+		function.
+	*/
+	env := newLoxEnvironment(fn.closure)
+	for i, param := range fn.decl.Params {
+		env.define(param.lexeme, args[i])
+	}
+
+	if err := in.execBlock(fn.decl.Body, env); err != nil {
+		/*
+			TODO: Here we treats return as an error so we can easily unwound the stack,
+			instead of of `error` we can use a custom interface that is returned as the
+			second value like `error`
+		*/
+		if ret, ok := err.(*loxReturn); ok {
+			return ret.val, nil
+		}
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (fn *loxFn) String() string {
+	return fmt.Sprintf("<fn %s/%d>", fn.decl.Name.lexeme, fn.arity())
 }

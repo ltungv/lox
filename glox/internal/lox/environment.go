@@ -40,3 +40,19 @@ func (env *loxEnvironment) get(name *loxToken) (interface{}, error) {
 	msg := fmt.Sprintf("Undefined variable '%s'.", name.lexeme)
 	return nil, newRuntimeError(name, msg)
 }
+
+func (env *loxEnvironment) assignAt(steps int, name *loxToken, val interface{}) {
+	env.ancestor(steps).values[name.lexeme] = val
+}
+
+func (env *loxEnvironment) getAt(steps int, name string) interface{} {
+	return env.ancestor(steps).values[name]
+}
+
+func (env *loxEnvironment) ancestor(steps int) *loxEnvironment {
+	iterEnv := env
+	for i := 0; i < steps; i++ {
+		iterEnv = iterEnv.enclosing
+	}
+	return iterEnv
+}
