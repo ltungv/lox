@@ -2,181 +2,181 @@ package lox
 
 import "fmt"
 
-// loxToken represents group a characters with additional information that was
+// Token represents group a characters with additional information that was
 // obtained during the scanning phase.
-type loxToken struct {
-	typ     loxTokenType
-	lexeme  string
-	literal interface{}
-	line    int
+type Token struct {
+	Type    TokenType
+	Lexeme  string
+	Literal interface{}
+	Line    int
 }
 
 // New creates a new token
-func newLoxToken(typ loxTokenType, lexeme string, literal interface{}, line int) *loxToken {
-	t := new(loxToken)
-	t.typ = typ
-	t.lexeme = lexeme
-	t.literal = literal
-	t.line = line
+func NewToken(typ TokenType, lexeme string, literal interface{}, line int) *Token {
+	t := new(Token)
+	t.Type = typ
+	t.Lexeme = lexeme
+	t.Literal = literal
+	t.Line = line
 	return t
 }
 
-func (t *loxToken) String() string {
-	return fmt.Sprintf("%s %s %v", t.typ.String(), t.lexeme, t.literal)
+func (t *Token) String() string {
+	return fmt.Sprintf("%s %s %v", t.Type.String(), t.Lexeme, t.Literal)
 }
 
-var loxKeywords = map[string]loxTokenType{
-	"and":    tokenAnd,
-	"class":  tokenClass,
-	"else":   tokenElse,
-	"false":  tokenFalse,
-	"fun":    tokenFun,
-	"for":    tokenFor,
-	"if":     tokenIf,
-	"nil":    tokenNil,
-	"or":     tokenOr,
-	"print":  tokenPrint,
-	"return": tokenReturn,
-	"super":  tokenSuper,
-	"this":   tokenThis,
-	"true":   tokenTrue,
-	"var":    tokenVar,
-	"while":  tokenWhile,
-	"eof":    tokenEOF,
+var KeywordTokens = map[string]TokenType{
+	"and":    AND,
+	"class":  CLASS,
+	"else":   ELSE,
+	"false":  FALSE,
+	"fun":    FUN,
+	"for":    FOR,
+	"if":     IF,
+	"nil":    NIL,
+	"or":     OR,
+	"print":  PRINT,
+	"return": RETURN,
+	"super":  SUPER,
+	"this":   THIS,
+	"true":   TRUE,
+	"var":    VAR,
+	"while":  WHILE,
+	"eof":    EOF,
 }
 
-const (
-	// Single-character tokens
-	tokenLeftParen loxTokenType = iota
-	tokenRightParen
-	tokenLeftBrace
-	tokenRightBrace
-	tokenComma
-	tokenDot
-	tokenMinus
-	tokenPlus
-	tokenSemicolon
-	tokenSlash
-	tokenStar
+/// TokenType is a just a wrapped string used to represent token's type
+type TokenType uint
 
-	// One or two chracter tokens
-	tokenBang
-	tokenBangEqual
-	tokenEqual
-	tokenEqualEqual
-	tokenGreater
-	tokenGreaterEqual
-	tokenLess
-	tokenLessEqual
-
-	// Literals
-	tokenIdentifier
-	tokenString
-	tokenNumber
-
-	// Keywords
-	tokenAnd
-	tokenClass
-	tokenElse
-	tokenFalse
-	tokenFun
-	tokenFor
-	tokenIf
-	tokenNil
-	tokenOr
-	tokenPrint
-	tokenReturn
-	tokenSuper
-	tokenThis
-	tokenTrue
-	tokenVar
-	tokenWhile
-	tokenEOF
-)
-
-/// loxTokenType is a just a wrapped string used to represent token's type
-type loxTokenType uint
-
-func (tt *loxTokenType) String() string {
+func (tt *TokenType) String() string {
 	switch *tt {
-	case tokenLeftParen:
+	case L_PAREN:
 		return "("
-	case tokenRightParen:
+	case R_PAREN:
 		return ")"
-	case tokenLeftBrace:
+	case L_BRACE:
 		return "{"
-	case tokenRightBrace:
+	case R_BRACE:
 		return "}"
-	case tokenComma:
+	case COMMA:
 		return ","
-	case tokenDot:
+	case DOT:
 		return "."
-	case tokenMinus:
+	case MINUS:
 		return "-"
-	case tokenPlus:
+	case PLUS:
 		return "+"
-	case tokenSemicolon:
+	case SEMICOLON:
 		return ";"
-	case tokenSlash:
+	case SLASH:
 		return "/"
-	case tokenStar:
+	case STAR:
 		return "*"
-	case tokenBang:
+	case BANG:
 		return "!"
-	case tokenBangEqual:
+	case BANG_EQUAL:
 		return "!="
-	case tokenEqual:
+	case EQUAL:
 		return "="
-	case tokenEqualEqual:
+	case EQUAL_EQUAL:
 		return "=="
-	case tokenGreater:
+	case GREATER:
 		return ">"
-	case tokenGreaterEqual:
+	case GREATER_EQUAL:
 		return ">="
-	case tokenLess:
+	case LESS:
 		return "<"
-	case tokenLessEqual:
+	case LESS_EQUAL:
 		return "<="
-	case tokenIdentifier:
+	case IDENT:
 		return "IDENTIFIER"
-	case tokenString:
+	case STRING:
 		return "STRING"
-	case tokenNumber:
+	case NUMBER:
 		return "NUMBER"
-	case tokenAnd:
+	case AND:
 		return "AND"
-	case tokenClass:
+	case CLASS:
 		return "CLASS"
-	case tokenElse:
+	case ELSE:
 		return "ELSE"
-	case tokenFalse:
+	case FALSE:
 		return "FALSE"
-	case tokenFun:
+	case FUN:
 		return "FUN"
-	case tokenFor:
+	case FOR:
 		return "FOR"
-	case tokenIf:
+	case IF:
 		return "IF"
-	case tokenNil:
+	case NIL:
 		return "NIL"
-	case tokenOr:
+	case OR:
 		return "OR"
-	case tokenPrint:
+	case PRINT:
 		return "PRINT"
-	case tokenReturn:
+	case RETURN:
 		return "RETURN"
-	case tokenSuper:
+	case SUPER:
 		return "SUPER"
-	case tokenThis:
+	case THIS:
 		return "THIS"
-	case tokenTrue:
+	case TRUE:
 		return "TRUE"
-	case tokenVar:
+	case VAR:
 		return "VAR"
-	case tokenWhile:
+	case WHILE:
 		return "WHILE"
-	case tokenEOF:
+	case EOF:
 		return "EOF"
 	}
 	return ""
 }
+
+const (
+	// Single-character tokens
+	L_PAREN TokenType = iota
+	R_PAREN
+	L_BRACE
+	R_BRACE
+	COMMA
+	DOT
+	MINUS
+	PLUS
+	SEMICOLON
+	SLASH
+	STAR
+
+	// One or two chracter tokens
+	BANG
+	BANG_EQUAL
+	EQUAL
+	EQUAL_EQUAL
+	GREATER
+	GREATER_EQUAL
+	LESS
+	LESS_EQUAL
+
+	// Literals
+	IDENT
+	STRING
+	NUMBER
+
+	// Keywords
+	AND
+	CLASS
+	ELSE
+	FALSE
+	FUN
+	FOR
+	IF
+	NIL
+	OR
+	PRINT
+	RETURN
+	SUPER
+	THIS
+	TRUE
+	VAR
+	WHILE
+	EOF
+)

@@ -18,25 +18,25 @@ func main() {
 	outputDir := os.Args[1]
 	// we do it the scripting way, instead of having types support from Go stdlib
 	expressionTypes := []string{
-		"Assign: Name *loxToken, Val Expr",
-		"Binary: Op *loxToken, Lhs Expr, Rhs Expr",
+		"Assign: Name *Token, Val Expr",
+		"Binary: Op *Token, Lhs Expr, Rhs Expr",
 		// Call stores the token for the closing parenthesis so the token's location
 		// can be used when we report RuntimeError caused by a function call.
-		"Call: Callee Expr, Paren *loxToken, Args []Expr",
+		"Call: Callee Expr, Paren *Token, Args []Expr",
 		"Group: Expr Expr",
 		"Literal: Val interface{}",
-		"Logical: Op *loxToken, Lhs Expr, Rhs Expr",
-		"Unary: Op *loxToken, Expr Expr",
-		"Var: Name *loxToken",
+		"Logical: Op *Token, Lhs Expr, Rhs Expr",
+		"Unary: Op *Token, Expr Expr",
+		"Var: Name *Token",
 	}
 	statementTypes := []string{
 		"Block: Stmts []Stmt",
 		"Expr: Expr Expr",
-		"Function: Name *loxToken, Params []*loxToken, Body []Stmt",
+		"Function: Name *Token, Params []*Token, Body []Stmt",
 		"If: Cond Expr, ThenBranch Stmt, ElseBranch Stmt",
 		"Print: Expr Expr",
-		"Return: Keyword *loxToken, Val Expr",
-		"Var: Name *loxToken, Init Expr",
+		"Return: Keyword *Token, Val Expr",
+		"Var: Name *Token, Init Expr",
 		"While: Cond Expr, Body Stmt",
 	}
 

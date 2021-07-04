@@ -14,11 +14,11 @@ type ExprVisitor interface {
 	VisitVarExpr(expr *VarExpr) (interface{}, error)
 }
 type AssignExpr struct {
-	Name *loxToken
+	Name *Token
 	Val  Expr
 }
 
-func NewAssignExpr(Name *loxToken, Val Expr) *AssignExpr {
+func NewAssignExpr(Name *Token, Val Expr) *AssignExpr {
 	return &AssignExpr{Name, Val}
 }
 func (expr *AssignExpr) Accept(visitor ExprVisitor) (interface{}, error) {
@@ -26,12 +26,12 @@ func (expr *AssignExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 }
 
 type BinaryExpr struct {
-	Op  *loxToken
+	Op  *Token
 	Lhs Expr
 	Rhs Expr
 }
 
-func NewBinaryExpr(Op *loxToken, Lhs Expr, Rhs Expr) *BinaryExpr {
+func NewBinaryExpr(Op *Token, Lhs Expr, Rhs Expr) *BinaryExpr {
 	return &BinaryExpr{Op, Lhs, Rhs}
 }
 func (expr *BinaryExpr) Accept(visitor ExprVisitor) (interface{}, error) {
@@ -40,11 +40,11 @@ func (expr *BinaryExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 
 type CallExpr struct {
 	Callee Expr
-	Paren  *loxToken
+	Paren  *Token
 	Args   []Expr
 }
 
-func NewCallExpr(Callee Expr, Paren *loxToken, Args []Expr) *CallExpr {
+func NewCallExpr(Callee Expr, Paren *Token, Args []Expr) *CallExpr {
 	return &CallExpr{Callee, Paren, Args}
 }
 func (expr *CallExpr) Accept(visitor ExprVisitor) (interface{}, error) {
@@ -74,12 +74,12 @@ func (expr *LiteralExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 }
 
 type LogicalExpr struct {
-	Op  *loxToken
+	Op  *Token
 	Lhs Expr
 	Rhs Expr
 }
 
-func NewLogicalExpr(Op *loxToken, Lhs Expr, Rhs Expr) *LogicalExpr {
+func NewLogicalExpr(Op *Token, Lhs Expr, Rhs Expr) *LogicalExpr {
 	return &LogicalExpr{Op, Lhs, Rhs}
 }
 func (expr *LogicalExpr) Accept(visitor ExprVisitor) (interface{}, error) {
@@ -87,11 +87,11 @@ func (expr *LogicalExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 }
 
 type UnaryExpr struct {
-	Op   *loxToken
+	Op   *Token
 	Expr Expr
 }
 
-func NewUnaryExpr(Op *loxToken, Expr Expr) *UnaryExpr {
+func NewUnaryExpr(Op *Token, Expr Expr) *UnaryExpr {
 	return &UnaryExpr{Op, Expr}
 }
 func (expr *UnaryExpr) Accept(visitor ExprVisitor) (interface{}, error) {
@@ -99,10 +99,10 @@ func (expr *UnaryExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 }
 
 type VarExpr struct {
-	Name *loxToken
+	Name *Token
 }
 
-func NewVarExpr(Name *loxToken) *VarExpr {
+func NewVarExpr(Name *Token) *VarExpr {
 	return &VarExpr{Name}
 }
 func (expr *VarExpr) Accept(visitor ExprVisitor) (interface{}, error) {

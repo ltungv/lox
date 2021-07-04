@@ -36,12 +36,12 @@ func (stmt *ExprStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 }
 
 type FunctionStmt struct {
-	Name   *loxToken
-	Params []*loxToken
+	Name   *Token
+	Params []*Token
 	Body   []Stmt
 }
 
-func NewFunctionStmt(Name *loxToken, Params []*loxToken, Body []Stmt) *FunctionStmt {
+func NewFunctionStmt(Name *Token, Params []*Token, Body []Stmt) *FunctionStmt {
 	return &FunctionStmt{Name, Params, Body}
 }
 func (stmt *FunctionStmt) Accept(visitor StmtVisitor) (interface{}, error) {
@@ -73,11 +73,11 @@ func (stmt *PrintStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 }
 
 type ReturnStmt struct {
-	Keyword *loxToken
+	Keyword *Token
 	Val     Expr
 }
 
-func NewReturnStmt(Keyword *loxToken, Val Expr) *ReturnStmt {
+func NewReturnStmt(Keyword *Token, Val Expr) *ReturnStmt {
 	return &ReturnStmt{Keyword, Val}
 }
 func (stmt *ReturnStmt) Accept(visitor StmtVisitor) (interface{}, error) {
@@ -85,11 +85,11 @@ func (stmt *ReturnStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 }
 
 type VarStmt struct {
-	Name *loxToken
+	Name *Token
 	Init Expr
 }
 
-func NewVarStmt(Name *loxToken, Init Expr) *VarStmt {
+func NewVarStmt(Name *Token, Init Expr) *VarStmt {
 	return &VarStmt{Name, Init}
 }
 func (stmt *VarStmt) Accept(visitor StmtVisitor) (interface{}, error) {

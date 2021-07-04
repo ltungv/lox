@@ -129,7 +129,7 @@ func (r *Resolver) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 func (r *Resolver) VisitVarExpr(expr *VarExpr) (interface{}, error) {
 	if r.scopes.Front() != nil {
 		scopeMap := r.scopes.Front().Value.(scopeMap)
-		if defined, exist := scopeMap[expr.Name.lexeme]; exist && !defined {
+		if defined, exist := scopeMap[expr.Name.Lexeme]; exist && !defined {
 			r.reporter.Report(newResolveError(expr.Name,
 				"Can't read local variable in its own initializer."))
 		}
@@ -156,12 +156,12 @@ func (r *Resolver) resolveFunction(fn *FunctionStmt, fnType loxFnType) {
 	r.currentFn = enclosingFn
 }
 
-func (r *Resolver) resolveLocal(expr Expr, name *loxToken) {
+func (r *Resolver) resolveLocal(expr Expr, name *Token) {
 	steps := 0
 	for scope := r.scopes.Front(); scope != nil; scope = scope.Next() {
 		scopeMap := scope.Value.(scopeMap)
-		if _, ok := scopeMap[name.lexeme]; ok {
-			r.interpreter.Resolve(expr, steps)
+		if _, ok := scopeMap[name.Lexeme]; ok {
+			r.interpreter.resolve(expr, steps)
 			return
 		}
 		steps++
@@ -188,21 +188,21 @@ func (r *Resolver) endScope() {
 	r.scopes.Remove(r.scopes.Front())
 }
 
-func (r *Resolver) declare(name *loxToken) {
+func (r *Resolver) declare(name *Token) {
 	if r.scopes.Front() != nil {
 		scope := r.scopes.Front().Value.(scopeMap)
-		if _, hasName := scope[name.lexeme]; hasName {
+		if _, hasName := scope[name.Lexeme]; hasName {
 			r.reporter.Report(newParseError(name,
 				"Already has a variable with this name in this scope"))
 		}
-		scope[name.lexeme] = false
+		scope[name.Lexeme] = false
 	}
 }
 
-func (r *Resolver) define(name *loxToken) {
+func (r *Resolver) define(name *Token) {
 	if r.scopes.Front() != nil {
 		scope := r.scopes.Front().Value.(scopeMap)
-		scope[name.lexeme] = true
+		scope[name.Lexeme] = true
 	}
 }
 

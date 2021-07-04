@@ -34,7 +34,7 @@ func TestSimpleReporterSendAnyError(t *testing.T) {
 
 func TestSimpleReporterSendRuntimeError(t *testing.T) {
 	assert := assert.New(t)
-	err := newRuntimeError(newLoxToken(tokenMinus, "-", nil, 1), "Operand must be numbers.")
+	err := newRuntimeError(NewToken(MINUS, "-", nil, 1), "Operand must be numbers.")
 
 	var out strings.Builder
 	r := NewSimpleReporter(&out)
@@ -48,7 +48,7 @@ func TestSimpleReporterSendRuntimeError(t *testing.T) {
 func TestSimpleReporterSendErrors(t *testing.T) {
 	assert := assert.New(t)
 	err1 := errors.New("Test error")
-	err2 := newRuntimeError(newLoxToken(tokenMinus, "-", nil, 1), "Operand must be numbers.")
+	err2 := newRuntimeError(NewToken(MINUS, "-", nil, 1), "Operand must be numbers.")
 
 	var out strings.Builder
 	r := NewSimpleReporter(&out)
@@ -63,7 +63,7 @@ func TestSimpleReporterSendErrors(t *testing.T) {
 func TestSimpleReporterReset(t *testing.T) {
 	assert := assert.New(t)
 	err1 := errors.New("Test error")
-	err2 := newRuntimeError(newLoxToken(tokenMinus, "-", nil, 1), "Operand must be numbers.")
+	err2 := newRuntimeError(NewToken(MINUS, "-", nil, 1), "Operand must be numbers.")
 
 	var out strings.Builder
 	r := NewSimpleReporter(&out)

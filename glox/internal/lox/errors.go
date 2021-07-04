@@ -26,12 +26,12 @@ func (err *scanError) Error() string {
 
 // ParserError indicates the syntactic grammar of the source code is invalid
 type parseError struct {
-	token   *loxToken
+	token   *Token
 	message string
 }
 
 // newParseError creates a new ParseError
-func newParseError(token *loxToken, message string) error {
+func newParseError(token *Token, message string) error {
 	e := new(parseError)
 	e.token = token
 	e.message = message
@@ -40,15 +40,15 @@ func newParseError(token *loxToken, message string) error {
 
 func (err *parseError) Error() string {
 	var loc string
-	if err.token.typ == tokenEOF {
+	if err.token.Type == EOF {
 		loc = "end"
 	} else {
-		loc = "'" + err.token.lexeme + "'"
+		loc = "'" + err.token.Lexeme + "'"
 	}
 
 	return fmt.Sprintf(
 		"[line %d] Error at %s: %s",
-		err.token.line,
+		err.token.Line,
 		loc,
 		err.message,
 	)
@@ -56,12 +56,12 @@ func (err *parseError) Error() string {
 
 // runtimeError represents any error that the interpreter detects when running
 type runtimeError struct {
-	token   *loxToken
+	token   *Token
 	message string
 }
 
 // newRuntimeError creates a new RuntimeError
-func newRuntimeError(token *loxToken, message string) error {
+func newRuntimeError(token *Token, message string) error {
 	e := new(runtimeError)
 	e.token = token
 	e.message = message
@@ -70,15 +70,15 @@ func newRuntimeError(token *loxToken, message string) error {
 
 func (err *runtimeError) Error() string {
 	var loc string
-	if err.token.typ == tokenEOF {
+	if err.token.Type == EOF {
 		loc = "end"
 	} else {
-		loc = "'" + err.token.lexeme + "'"
+		loc = "'" + err.token.Lexeme + "'"
 	}
 
 	return fmt.Sprintf(
 		"[line %d] RuntimeError at %s: %s",
-		err.token.line,
+		err.token.Line,
 		loc,
 		err.message,
 	)
@@ -87,12 +87,12 @@ func (err *runtimeError) Error() string {
 // ResolveError represents any error that the interpreter detects when resolving
 // the syntax tree
 type resolveError struct {
-	token   *loxToken
+	token   *Token
 	message string
 }
 
 // newResolveError creates a new ResolveError
-func newResolveError(token *loxToken, message string) error {
+func newResolveError(token *Token, message string) error {
 	e := new(resolveError)
 	e.token = token
 	e.message = message
@@ -101,15 +101,15 @@ func newResolveError(token *loxToken, message string) error {
 
 func (err *resolveError) Error() string {
 	var loc string
-	if err.token.typ == tokenEOF {
+	if err.token.Type == EOF {
 		loc = "end"
 	} else {
-		loc = "'" + err.token.lexeme + "'"
+		loc = "'" + err.token.Lexeme + "'"
 	}
 
 	return fmt.Sprintf(
 		"[line %d] ResolveError at %s: %s",
-		err.token.line,
+		err.token.Line,
 		loc,
 		err.message,
 	)

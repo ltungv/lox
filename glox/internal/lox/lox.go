@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-func stringify(v interface{}) string {
+func Stringify(v interface{}) string {
 	switch v := v.(type) {
 	case nil:
 		return fmt.Sprint("nil")
@@ -17,7 +17,7 @@ func stringify(v interface{}) string {
 	}
 }
 
-func isTruthy(value interface{}) bool {
+func Truthy(value interface{}) bool {
 	if value == nil {
 		return false
 	}
