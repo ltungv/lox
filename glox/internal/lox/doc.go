@@ -26,7 +26,7 @@ Grammars
 	returnStmt --> "return" expr? ";" ;
 	whileStmt  --> "while" "(" expr ")" stmt ;
 	expr       --> assign ;
-	assign     --> IDENTIFIER "=" expr ";"
+	assign     --> ( call "." )? IDENTIFIER "=" expr ";"
 	             | or ;
 	or         --> and ( "or" and )* ;
 	and        --> equality ( "and" equality )* ;
@@ -36,10 +36,10 @@ Grammars
 	factor     --> unary ( ( "/" | "*" ) unary )* ;
 	unary      --> ( "!" | "-" | "+" | "/" | "*" ) unary
 	             | call ;
-	call       --> primary ( "(" args? ")" )* ;
+	call       --> primary ( "(" args? ")" | "." IDENTIFIER )* ;
 	args       --> expr ( "," expr )* ;
 	primary    --> NUMBER | STRING | IDENTIFIER
-	             | "true" | "false" | "nil"
+	             | "true" | "false" | "nil" | "this"
 	             | "(" expr ")" ;
 
 "unary" rule has some matches for error generations:

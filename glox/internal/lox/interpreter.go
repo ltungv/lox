@@ -3,7 +3,6 @@ package lox
 import (
 	"fmt"
 	"io"
-	"time"
 )
 
 // loxCallable is implemented by Lox's objects that can be called.
@@ -67,13 +66,19 @@ func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 }
 
 func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
-	class := newClass(stmt.Name.Lexeme)
+	methods := make(map[string]*loxFn)
+	for _, method := range stmt.Methods {
+		isInitializer := method.Name.Lexeme == "init"
+		fn := newFn(method, in.environment, isInitializer)
+		methods[method.Name.Lexeme] = fn
+	}
+	class := newClass(stmt.Name.Lexeme, methods)
 	in.environment.define(stmt.Name.Lexeme, class)
 	return nil, nil
 }
 
 func (in *Interpreter) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
-	fn := newFn(stmt, in.environment)
+	fn := newFn(stmt, in.environment, false)
 	in.environment.define(stmt.Name.Lexeme, fn)
 	return nil, nil
 }
@@ -297,6 +302,19 @@ func (in *Interpreter) VisitCallExpr(expr *CallExpr) (interface{}, error) {
 	return callable.call(in, args)
 }
 
+func (in *Interpreter) VisitGetExpr(expr *GetExpr) (interface{}, error) {
+	obj, err := in.eval(expr.Obj)
+	if err != nil {
+		return nil, err
+	}
+
+	if inst, ok := obj.(*loxInstance); ok {
+		return inst.get(expr.Name)
+	} else {
+		return nil, newRuntimeError(expr.Name, "Only instances have properties.")
+	}
+}
+
 func (in *Interpreter) VisitGroupExpr(expr *GroupExpr) (interface{}, error) {
 	return in.eval(expr.Expr)
 }
@@ -327,6 +345,28 @@ func (in *Interpreter) VisitLogicalExpr(expr *LogicalExpr) (interface{}, error) 
 	return in.eval(expr.Rhs)
 }
 
+func (in *Interpreter) VisitSetExpr(expr *SetExpr) (interface{}, error) {
+	obj, err := in.eval(expr.Obj)
+	if err != nil {
+		return nil, err
+	}
+
+	if obj, ok := obj.(*loxInstance); ok {
+		val, err := in.eval(expr.Val)
+		if err != nil {
+			return nil, err
+		}
+		obj.set(expr.Name, val)
+		return val, nil
+	} else {
+		return nil, newRuntimeError(expr.Name, "Only instances have fields.")
+	}
+}
+
+func (in *Interpreter) VisitThisExpr(expr *ThisExpr) (interface{}, error) {
+	return in.lookUpVar(expr.Keyword, expr)
+}
+
 func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 	exprVal, err := in.eval(expr.Expr)
 	if err != nil {
@@ -346,11 +386,7 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 }
 
 func (in *Interpreter) VisitVarExpr(expr *VarExpr) (interface{}, error) {
-	if steps, ok := in.locals[expr]; ok {
-		return in.environment.getAt(steps, expr.Name.Lexeme), nil
-	} else {
-		return in.globals.get(expr.Name)
-	}
+	return in.lookUpVar(expr.Name, expr)
 }
 
 func (in *Interpreter) execBlock(statements []Stmt, environment *loxEnvironment) error {
@@ -379,125 +415,10 @@ func (in *Interpreter) resolve(expr Expr, steps int) {
 	in.locals[expr] = steps
 }
 
-type loxClass struct {
-	name string
-}
-
-func newClass(name string) *loxClass {
-	class := new(loxClass)
-	class.name = name
-	return class
-}
-
-func (class *loxClass) String() string {
-	return class.name
-}
-
-// TODO: The arity is 0 for, it will be changed when we allow user-defined
-// constructor
-func (class *loxClass) arity() int { return 0 }
-
-func (class *loxClass) call(
-	in *Interpreter,
-	args []interface{},
-) (interface{}, error) {
-	instance := newInstance(class)
-	return instance, nil
-}
-
-type loxInstance struct {
-	class *loxClass
-}
-
-func newInstance(class *loxClass) *loxInstance {
-	inst := new(loxInstance)
-	inst.class = class
-	return inst
-}
-
-func (inst *loxInstance) String() string {
-	return inst.class.name + " instance"
-}
-
-type loxReturn struct {
-	val interface{}
-}
-
-func newReturn(val interface{}) *loxReturn {
-	r := new(loxReturn)
-	r.val = val
-	return r
-}
-
-func (r *loxReturn) Error() string {
-	return fmt.Sprintf("return %v", Stringify(r.val))
-}
-
-type loxNativeFnClock struct{}
-
-func (fn *loxNativeFnClock) arity() int {
-	return 0
-}
-
-func (fn *loxNativeFnClock) call(
-	in *Interpreter,
-	args []interface{},
-) (interface{}, error) {
-	return time.Since(time.Unix(0, 0)).Seconds(), nil
-}
-
-func (fn *loxNativeFnClock) String() string {
-	return "<native fn clock/0>"
-}
-
-// loxFn represents a lox function that can be called
-type loxFn struct {
-	decl    *FunctionStmt
-	closure *loxEnvironment
-}
-
-func newFn(decl *FunctionStmt, closure *loxEnvironment) *loxFn {
-	fn := new(loxFn)
-	fn.decl = decl
-	fn.closure = closure
-	return fn
-}
-
-func (fn *loxFn) arity() int {
-	return len(fn.decl.Params)
-}
-
-func (fn *loxFn) call(
-	in *Interpreter,
-	args []interface{},
-) (interface{}, error) {
-	/*
-		A function encapsulates its parameters, which means each function get is
-		own environment where it stores the encapsulated variables. Each function
-		call dynamically creates a new environment, otherwise, recursion would break.
-		If there are multiple calls to the same function in play at the same time,
-		each needs its own environment, even though they are all calls to the same
-		function.
-	*/
-	env := newEnvironment(fn.closure)
-	for i, param := range fn.decl.Params {
-		env.define(param.Lexeme, args[i])
+func (in *Interpreter) lookUpVar(name *Token, expr Expr) (interface{}, error) {
+	if steps, ok := in.locals[expr]; ok {
+		return in.environment.getAt(steps, name.Lexeme), nil
+	} else {
+		return in.globals.get(name)
 	}
-
-	if err := in.execBlock(fn.decl.Body, env); err != nil {
-		/*
-			TODO: Here we treats return as an error so we can easily unwound the stack,
-			instead of of `error` we can use a custom interface that is returned as the
-			second value like `error`
-		*/
-		if ret, ok := err.(*loxReturn); ok {
-			return ret.val, nil
-		}
-		return nil, err
-	}
-	return nil, nil
-}
-
-func (fn *loxFn) String() string {
-	return fmt.Sprintf("<fn %s/%d>", fn.decl.Name.Lexeme, fn.arity())
 }

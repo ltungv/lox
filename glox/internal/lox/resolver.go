@@ -9,17 +9,27 @@ type scopeMap = map[string]bool
 
 type loxFnType = int
 
+type loxClassType = int
+
 const (
-	fnTypeNone loxFnType = iota
-	fnTypeFunction
+	callTypeNone loxFnType = iota
+	callTypeFunction
+	callTypeMethod
+	callTypeInitializer
+)
+
+const (
+	classTypeNone loxClassType = iota
+	classTypeClass
 )
 
 // Resolver performs semantics analysis on the syntax tree.
 type Resolver struct {
-	scopes      *list.List
-	interpreter *Interpreter
-	reporter    Reporter
-	currentFn   loxFnType
+	scopes       *list.List
+	interpreter  *Interpreter
+	reporter     Reporter
+	currentFn    loxFnType
+	currentClass loxClassType
 }
 
 func NewResolver(interpreter *Interpreter, reporter Reporter) *Resolver {
@@ -27,7 +37,8 @@ func NewResolver(interpreter *Interpreter, reporter Reporter) *Resolver {
 	r.scopes = list.New()
 	r.interpreter = interpreter
 	r.reporter = reporter
-	r.currentFn = fnTypeNone
+	r.currentFn = callTypeNone
+	r.currentClass = classTypeNone
 	return r
 }
 
@@ -52,15 +63,33 @@ func (r *Resolver) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 }
 
 func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
+	enclosingClass := r.currentClass
+	r.currentClass = classTypeClass
+
 	r.declare(stmt.Name)
 	r.define(stmt.Name)
+
+	r.beginScope()
+	scope := r.scopes.Front().Value.(scopeMap)
+	scope["this"] = true
+
+	for _, method := range stmt.Methods {
+		decl := callTypeMethod
+		if method.Name.Lexeme == "init" {
+			decl = callTypeInitializer
+		}
+		r.resolveFunction(method, decl)
+	}
+
+	r.endScope()
+	r.currentClass = enclosingClass
 	return nil, nil
 }
 
 func (r *Resolver) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
 	r.declare(stmt.Name)
 	r.define(stmt.Name)
-	r.resolveFunction(stmt, fnTypeFunction)
+	r.resolveFunction(stmt, callTypeFunction)
 	return nil, nil
 }
 
@@ -79,11 +108,15 @@ func (r *Resolver) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
 }
 
 func (r *Resolver) VisitReturnStmt(stmt *ReturnStmt) (interface{}, error) {
-	if r.currentFn == fnTypeNone {
+	if r.currentFn == callTypeNone {
 		r.reporter.Report(newResolveError(stmt.Keyword,
 			"Can't return from top-level code."))
 	}
 	if stmt.Val != nil {
+		if r.currentFn == callTypeInitializer {
+			r.reporter.Report(newResolveError(stmt.Keyword,
+				"Can't return a value from an initializer."))
+		}
 		r.resolveExpr(stmt.Val)
 	}
 	return nil, nil
@@ -124,6 +157,12 @@ func (r *Resolver) VisitCallExpr(expr *CallExpr) (interface{}, error) {
 	return nil, nil
 }
 
+func (r *Resolver) VisitGetExpr(expr *GetExpr) (interface{}, error) {
+	// only resolve the ident on the left of the dot, the properties are dynamic
+	r.resolveExpr(expr.Obj)
+	return nil, nil
+}
+
 func (r *Resolver) VisitGroupExpr(expr *GroupExpr) (interface{}, error) {
 	r.resolveExpr(expr.Expr)
 	return nil, nil
@@ -136,6 +175,22 @@ func (r *Resolver) VisitLiteralExpr(expr *LiteralExpr) (interface{}, error) {
 func (r *Resolver) VisitLogicalExpr(expr *LogicalExpr) (interface{}, error) {
 	r.resolveExpr(expr.Lhs)
 	r.resolveExpr(expr.Rhs)
+	return nil, nil
+}
+
+func (r *Resolver) VisitSetExpr(expr *SetExpr) (interface{}, error) {
+	r.resolveExpr(expr.Val)
+	r.resolveExpr(expr.Obj)
+	return nil, nil
+}
+
+func (r *Resolver) VisitThisExpr(expr *ThisExpr) (interface{}, error) {
+	if r.currentClass == classTypeNone {
+		r.reporter.Report(newResolveError(expr.Keyword,
+			"Can't use 'this' outside of a class."))
+		return nil, nil
+	}
+	r.resolveLocal(expr, expr.Keyword)
 	return nil, nil
 }
 

@@ -23,9 +23,12 @@ func main() {
 		// Call stores the token for the closing parenthesis so the token's location
 		// can be used when we report RuntimeError caused by a function call.
 		"Call: Callee Expr, Paren *Token, Args []Expr",
+		"Get: Obj Expr, Name *Token",
 		"Group: Expr Expr",
 		"Literal: Val interface{}",
 		"Logical: Op *Token, Lhs Expr, Rhs Expr",
+		"Set: Obj Expr, Name *Token, Val Expr",
+		"This: Keyword *Token",
 		"Unary: Op *Token, Expr Expr",
 		"Var: Name *Token",
 	}

@@ -7,9 +7,12 @@ type ExprVisitor interface {
 	VisitAssignExpr(expr *AssignExpr) (interface{}, error)
 	VisitBinaryExpr(expr *BinaryExpr) (interface{}, error)
 	VisitCallExpr(expr *CallExpr) (interface{}, error)
+	VisitGetExpr(expr *GetExpr) (interface{}, error)
 	VisitGroupExpr(expr *GroupExpr) (interface{}, error)
 	VisitLiteralExpr(expr *LiteralExpr) (interface{}, error)
 	VisitLogicalExpr(expr *LogicalExpr) (interface{}, error)
+	VisitSetExpr(expr *SetExpr) (interface{}, error)
+	VisitThisExpr(expr *ThisExpr) (interface{}, error)
 	VisitUnaryExpr(expr *UnaryExpr) (interface{}, error)
 	VisitVarExpr(expr *VarExpr) (interface{}, error)
 }
@@ -51,6 +54,18 @@ func (expr *CallExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 	return visitor.VisitCallExpr(expr)
 }
 
+type GetExpr struct {
+	Obj  Expr
+	Name *Token
+}
+
+func NewGetExpr(Obj Expr, Name *Token) *GetExpr {
+	return &GetExpr{Obj, Name}
+}
+func (expr *GetExpr) Accept(visitor ExprVisitor) (interface{}, error) {
+	return visitor.VisitGetExpr(expr)
+}
+
 type GroupExpr struct {
 	Expr Expr
 }
@@ -84,6 +99,30 @@ func NewLogicalExpr(Op *Token, Lhs Expr, Rhs Expr) *LogicalExpr {
 }
 func (expr *LogicalExpr) Accept(visitor ExprVisitor) (interface{}, error) {
 	return visitor.VisitLogicalExpr(expr)
+}
+
+type SetExpr struct {
+	Obj  Expr
+	Name *Token
+	Val  Expr
+}
+
+func NewSetExpr(Obj Expr, Name *Token, Val Expr) *SetExpr {
+	return &SetExpr{Obj, Name, Val}
+}
+func (expr *SetExpr) Accept(visitor ExprVisitor) (interface{}, error) {
+	return visitor.VisitSetExpr(expr)
+}
+
+type ThisExpr struct {
+	Keyword *Token
+}
+
+func NewThisExpr(Keyword *Token) *ThisExpr {
+	return &ThisExpr{Keyword}
+}
+func (expr *ThisExpr) Accept(visitor ExprVisitor) (interface{}, error) {
+	return visitor.VisitThisExpr(expr)
 }
 
 type UnaryExpr struct {

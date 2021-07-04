@@ -373,10 +373,14 @@ func (parser *Parser) assign() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if lhs, ok := lhs.(*VarExpr); ok {
+		switch lhs := lhs.(type) {
+		case *VarExpr:
 			return NewAssignExpr(lhs.Name, rhs), nil
+		case *GetExpr:
+			return NewSetExpr(lhs.Obj, lhs.Name, rhs), nil
+		default:
+			parser.reporter.Report(newParseError(op, "Invalid assignment target."))
 		}
-		parser.reporter.Report(newParseError(op, "Invalid assignment target."))
 	}
 	return lhs, nil
 }
@@ -511,6 +515,12 @@ func (parser *Parser) call() (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+		} else if parser.match(DOT) {
+			name, err := parser.consume(IDENT, "Expect property name after '.'.")
+			if err != nil {
+				return nil, err
+			}
+			expr = NewGetExpr(expr, name)
 		} else {
 			break
 		}
@@ -552,6 +562,9 @@ func (parser *Parser) finishCall(callee Expr) (Expr, error) {
 }
 
 func (parser *Parser) primary() (Expr, error) {
+	if parser.match(THIS) {
+		return NewThisExpr(parser.prev()), nil
+	}
 	if parser.match(FALSE) {
 		return NewLiteralExpr(false), nil
 	}
