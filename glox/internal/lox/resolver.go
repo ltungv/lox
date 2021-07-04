@@ -2,6 +2,18 @@ package lox
 
 import "container/list"
 
+// Each map reprents a single block scope, variables at the global scope are not
+// tracked by the resolver. If it cannot resolve a variable in the local
+// scopes, it assumes the variable to be in the global scope.
+type scopeMap = map[string]bool
+
+type loxFnType = int
+
+const (
+	fnTypeNone loxFnType = iota
+	fnTypeFunction
+)
+
 // Resolver performs semantics analysis on the syntax tree.
 type Resolver struct {
 	scopes      *list.List
@@ -205,15 +217,3 @@ func (r *Resolver) define(name *Token) {
 		scope[name.Lexeme] = true
 	}
 }
-
-// Each map reprents a single block scope, variables at the global scope are not
-// tracked by the resolver. If it cannot resolve a variable in the local
-// scopes, it assumes the variable to be in the global scope.
-type scopeMap = map[string]bool
-
-type loxFnType = int
-
-const (
-	fnTypeNone loxFnType = iota
-	fnTypeFunction
-)

@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+// loxCallable is implemented by Lox's objects that can be called.
+type loxCallable interface {
+	arity() int
+	call(in *Interpreter, args []interface{}) (interface{}, error)
+}
+
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
 // struct implements ExprVisitor
 type Interpreter struct {
@@ -379,12 +385,6 @@ func newLoxReturn(val interface{}) *loxReturn {
 
 func (r *loxReturn) Error() string {
 	return fmt.Sprintf("return %v", Stringify(r.val))
-}
-
-// loxCallable is implemented by Lox's objects that can be called.
-type loxCallable interface {
-	arity() int
-	call(in *Interpreter, args []interface{}) (interface{}, error)
 }
 
 type loxNativeFnClock struct{}
