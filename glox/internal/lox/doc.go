@@ -2,9 +2,11 @@
 Grammars
 
 	program    --> decl* EOF ;
-	decl       --> funDecl
+	decl       --> classDecl
+	             | funDecl
 	             | varDecl
 	             | stmt ;
+	classDecl  --> "class" IDENTIFIER "{" function* "}" ;
 	funDecl    --> "fun" function ;
 	function   --> IDENTIFIER "(" params? ")" block ;
 	params     --> IDENTIFIER ( "," IDENTIFIER )* ;

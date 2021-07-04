@@ -7,7 +7,7 @@ type loxEnvironment struct {
 	values    map[string]interface{}
 }
 
-func newLoxEnvironment(enclosing *loxEnvironment) *loxEnvironment {
+func newEnvironment(enclosing *loxEnvironment) *loxEnvironment {
 	env := new(loxEnvironment)
 	env.enclosing = enclosing
 	env.values = make(map[string]interface{})

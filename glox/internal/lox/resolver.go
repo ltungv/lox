@@ -51,6 +51,12 @@ func (r *Resolver) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 	return nil, nil
 }
 
+func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
+	r.declare(stmt.Name)
+	r.define(stmt.Name)
+	return nil, nil
+}
+
 func (r *Resolver) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
 	r.declare(stmt.Name)
 	r.define(stmt.Name)

@@ -5,6 +5,7 @@ type Stmt interface {
 }
 type StmtVisitor interface {
 	VisitBlockStmt(stmt *BlockStmt) (interface{}, error)
+	VisitClassStmt(stmt *ClassStmt) (interface{}, error)
 	VisitExprStmt(stmt *ExprStmt) (interface{}, error)
 	VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error)
 	VisitIfStmt(stmt *IfStmt) (interface{}, error)
@@ -22,6 +23,18 @@ func NewBlockStmt(Stmts []Stmt) *BlockStmt {
 }
 func (stmt *BlockStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitBlockStmt(stmt)
+}
+
+type ClassStmt struct {
+	Name    *Token
+	Methods []*FunctionStmt
+}
+
+func NewClassStmt(Name *Token, Methods []*FunctionStmt) *ClassStmt {
+	return &ClassStmt{Name, Methods}
+}
+func (stmt *ClassStmt) Accept(visitor StmtVisitor) (interface{}, error) {
+	return visitor.VisitClassStmt(stmt)
 }
 
 type ExprStmt struct {

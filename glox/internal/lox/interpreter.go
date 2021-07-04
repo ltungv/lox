@@ -24,7 +24,7 @@ type Interpreter struct {
 }
 
 func NewInterpreter(output io.Writer, reporter Reporter, isREPL bool) *Interpreter {
-	env := newLoxEnvironment(nil)
+	env := newEnvironment(nil)
 	env.define("clock", new(loxNativeFnClock))
 
 	interpreter := new(Interpreter)
@@ -47,7 +47,7 @@ func (in *Interpreter) Interpret(statements []Stmt) {
 }
 
 func (in *Interpreter) VisitBlockStmt(stmt *BlockStmt) (interface{}, error) {
-	return nil, in.execBlock(stmt.Stmts, newLoxEnvironment(in.environment))
+	return nil, in.execBlock(stmt.Stmts, newEnvironment(in.environment))
 }
 
 func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
@@ -66,8 +66,14 @@ func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 	return nil, nil
 }
 
+func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
+	class := newClass(stmt.Name.Lexeme)
+	in.environment.define(stmt.Name.Lexeme, class)
+	return nil, nil
+}
+
 func (in *Interpreter) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
-	fn := newLoxFn(stmt, in.environment)
+	fn := newFn(stmt, in.environment)
 	in.environment.define(stmt.Name.Lexeme, fn)
 	return nil, nil
 }
@@ -116,7 +122,7 @@ func (in *Interpreter) VisitReturnStmt(stmt *ReturnStmt) (interface{}, error) {
 			return nil, err
 		}
 	}
-	return nil, newLoxReturn(val)
+	return nil, newReturn(val)
 }
 
 func (in *Interpreter) VisitWhileStmt(stmt *WhileStmt) (interface{}, error) {
@@ -373,11 +379,51 @@ func (in *Interpreter) resolve(expr Expr, steps int) {
 	in.locals[expr] = steps
 }
 
+type loxClass struct {
+	name string
+}
+
+func newClass(name string) *loxClass {
+	class := new(loxClass)
+	class.name = name
+	return class
+}
+
+func (class *loxClass) String() string {
+	return class.name
+}
+
+// TODO: The arity is 0 for, it will be changed when we allow user-defined
+// constructor
+func (class *loxClass) arity() int { return 0 }
+
+func (class *loxClass) call(
+	in *Interpreter,
+	args []interface{},
+) (interface{}, error) {
+	instance := newInstance(class)
+	return instance, nil
+}
+
+type loxInstance struct {
+	class *loxClass
+}
+
+func newInstance(class *loxClass) *loxInstance {
+	inst := new(loxInstance)
+	inst.class = class
+	return inst
+}
+
+func (inst *loxInstance) String() string {
+	return inst.class.name + " instance"
+}
+
 type loxReturn struct {
 	val interface{}
 }
 
-func newLoxReturn(val interface{}) *loxReturn {
+func newReturn(val interface{}) *loxReturn {
 	r := new(loxReturn)
 	r.val = val
 	return r
@@ -410,7 +456,7 @@ type loxFn struct {
 	closure *loxEnvironment
 }
 
-func newLoxFn(decl *FunctionStmt, closure *loxEnvironment) *loxFn {
+func newFn(decl *FunctionStmt, closure *loxEnvironment) *loxFn {
 	fn := new(loxFn)
 	fn.decl = decl
 	fn.closure = closure
@@ -433,7 +479,7 @@ func (fn *loxFn) call(
 		each needs its own environment, even though they are all calls to the same
 		function.
 	*/
-	env := newLoxEnvironment(fn.closure)
+	env := newEnvironment(fn.closure)
 	for i, param := range fn.decl.Params {
 		env.define(param.Lexeme, args[i])
 	}

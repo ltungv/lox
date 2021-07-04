@@ -34,11 +34,14 @@ func (parser *Parser) decl() Stmt {
 	var stmt Stmt
 	var err error
 
-	if parser.match(VAR) {
-		stmt, err = parser.varDecl()
-	} else if parser.match(FUN) {
+	switch {
+	case parser.match(CLASS):
+		stmt, err = parser.classDecl()
+	case parser.match(FUN):
 		stmt, err = parser.function("function")
-	} else {
+	case parser.match(VAR):
+		stmt, err = parser.varDecl()
+	default:
 		stmt, err = parser.stmt()
 	}
 
@@ -50,9 +53,35 @@ func (parser *Parser) decl() Stmt {
 	return stmt
 }
 
+func (parser *Parser) classDecl() (Stmt, error) {
+	name, err := parser.consume(IDENT, "Expect class name.")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = parser.consume(L_BRACE, "Expect '{' before class body.")
+	if err != nil {
+		return nil, err
+	}
+	var methods []*FunctionStmt
+	for !parser.check(R_BRACE) && !parser.isEOF() {
+		method, err := parser.function("method")
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, method)
+	}
+	_, err = parser.consume(R_BRACE, "Expect '}' after class body.")
+	if err != nil {
+		return nil, err
+	}
+
+	return NewClassStmt(name, methods), nil
+}
+
 // The parameter "kind" is used to control the error message when this method is
 // reused when parsing objects' methods.
-func (parser *Parser) function(kind string) (Stmt, error) {
+func (parser *Parser) function(kind string) (*FunctionStmt, error) {
 	// function name
 	name, err := parser.consume(
 		IDENT,
@@ -191,14 +220,14 @@ func (parser *Parser) forStmt() (Stmt, error) {
 	}
 	// initializer clause
 	var init Stmt
-	if parser.match(SEMICOLON) {
-		// do nothing
-	} else if parser.match(VAR) {
+	switch {
+	case parser.match(SEMICOLON):
+	case parser.match(VAR):
 		init, err = parser.varDecl()
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	default:
 		init, err = parser.exprStmt()
 		if err != nil {
 			return nil, err
