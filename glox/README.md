@@ -24,6 +24,30 @@ I'll try to write some unit tests along the way, they probably just do some simp
 + [ ] Support anonymous functions
 + [ ] Report error if local variable is never used
 + [ ] Use array to stores variable for environment representation 
++ [ ] Static methods. See metaclasses used by Smalltalk and Ruby
+  ```kotlin
+  class Math {
+    class square(n) {
+      return n * n;
+    }
+  }
+  print Math.square(3); // Prints "9".
+  ```
++ [ ] Object getters
+  ```kotlin
+  class Circle {
+    init(radius) {
+      this.radius = radius;
+    }
+
+    area {
+      return 3.141592653 * this.radius * this.radius;
+    }
+  }
+
+  var circle = Circle(4);
+  print circle.area; // Prints roughly "50.2655".
+  ```
 + [ ] ~Compare values of different types~
 + [ ] ~Implicit conversion to string for `+` operator when either operand is a string~
 
