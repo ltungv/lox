@@ -1,17 +1,41 @@
-class Node {
-  init(value,left,right) {
+class BinaryTree {
+  init(value) {
     this.value = value;
-    this.left = left;
-    this.right = right;
+    this.left = nil;
+    this.right = nil;
+  }
+
+  add(value) {
+    if (value > this.value) {
+      if (this.right == nil)
+        this.right = BinaryTree(value);
+      else 
+        this.right.add(value);
+    } else {
+      if (this.left == nil) 
+        this.left = BinaryTree(value);
+      else
+        this.left.add(value);
+    }
+  }
+
+  find(value) {
+    if (value == this.value) {
+      return true;
+    } else if (value > this.value) {
+      if (this.right == nil) return false;
+      return this.right.find(value);
+    } else {
+      if (this.left == nil) return false;
+      return this.left.find(value);
+    }
   }
 }
 
-var root = Node(
-  1,
-  Node(2, nil, nil),
-  Node(3, nil, nil)
-);
+var root = BinaryTree(2);
+root.add(1);
+root.add(3);
 
-print root.value;
-print root.left.value;
-print root.right.value;
+print root.find(1);
+print root.find(2);
+print root.find(3);
