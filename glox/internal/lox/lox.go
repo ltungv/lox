@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func Stringify(v interface{}) string {
+func stringify(v interface{}) string {
 	switch v := v.(type) {
 	case nil:
 		return fmt.Sprint("nil")
@@ -18,7 +18,7 @@ func Stringify(v interface{}) string {
 	}
 }
 
-func Truthy(value interface{}) bool {
+func truthy(value interface{}) bool {
 	if value == nil {
 		return false
 	}
@@ -28,68 +28,68 @@ func Truthy(value interface{}) bool {
 	return true
 }
 
-type loxClass struct {
+type class struct {
 	name    string
-	super   *loxClass
-	methods map[string]*loxFn
+	super   *class
+	methods map[string]*function
 }
 
-func newClass(name string, super *loxClass, methods map[string]*loxFn) *loxClass {
-	class := new(loxClass)
-	class.name = name
-	class.super = super
-	class.methods = methods
-	return class
+func newClass(name string, super *class, methods map[string]*function) *class {
+	c := new(class)
+	c.name = name
+	c.super = super
+	c.methods = methods
+	return c
 }
 
-func (class *loxClass) String() string {
-	return class.name
+func (c *class) String() string {
+	return c.name
 }
 
-func (class *loxClass) arity() int {
-	if init, ok := class.findMethod("init"); ok {
+func (c *class) arity() int {
+	if init, ok := c.findMethod("init"); ok {
 		return init.arity()
 	}
 	return 0
 }
 
-func (class *loxClass) call(
+func (c *class) call(
 	interpreter *Interpreter,
 	args []interface{},
 ) (interface{}, error) {
-	instance := newInstance(class)
+	instance := newInstance(c)
 	// call the initializer on the instance if it's defined
-	if init, ok := class.findMethod("init"); ok {
+	if init, ok := c.findMethod("init"); ok {
 		init.bind(instance).call(interpreter, args)
 	}
 	return instance, nil
 }
 
-func (class *loxClass) findMethod(name string) (*loxFn, bool) {
-	method, ok := class.methods[name]
-	if !ok && class.super != nil {
-		method, ok = class.super.findMethod(name)
+func (c *class) findMethod(name string) (*function, bool) {
+	method, ok := c.methods[name]
+	if !ok && c.super != nil {
+		method, ok = c.super.findMethod(name)
 	}
 	return method, ok
 }
 
-type loxInstance struct {
-	class  *loxClass
+type instance struct {
+	class  *class
 	fields map[string]interface{}
 }
 
-func newInstance(class *loxClass) *loxInstance {
-	inst := new(loxInstance)
-	inst.class = class
+func newInstance(klass *class) *instance {
+	inst := new(instance)
+	inst.class = klass
 	inst.fields = make(map[string]interface{})
 	return inst
 }
 
-func (inst *loxInstance) String() string {
+func (inst *instance) String() string {
 	return inst.class.name + " instance"
 }
 
-func (inst *loxInstance) get(name *Token) (interface{}, error) {
+func (inst *instance) get(name *Token) (interface{}, error) {
 	if val, ok := inst.fields[name.Lexeme]; ok {
 		return val, nil
 	}
@@ -105,22 +105,22 @@ func (inst *loxInstance) get(name *Token) (interface{}, error) {
 	))
 }
 
-func (inst *loxInstance) set(name *Token, val interface{}) {
+func (inst *instance) set(name *Token, val interface{}) {
 	inst.fields[name.Lexeme] = val
 }
 
-type loxReturn struct {
+type callReturn struct {
 	val interface{}
 }
 
-func newReturn(val interface{}) *loxReturn {
-	r := new(loxReturn)
+func newReturn(val interface{}) *callReturn {
+	r := new(callReturn)
 	r.val = val
 	return r
 }
 
-func (r *loxReturn) Error() string {
-	return fmt.Sprintf("return %v", Stringify(r.val))
+func (r *callReturn) Error() string {
+	return fmt.Sprintf("return %v", stringify(r.val))
 }
 
 type loxNativeFnClock struct{}
@@ -140,30 +140,30 @@ func (fn *loxNativeFnClock) String() string {
 	return "<native fn>"
 }
 
-// loxFn represents a lox function that can be called
-type loxFn struct {
+// function represents a lox function that can be called
+type function struct {
 	decl          *FunctionStmt
-	closure       *loxEnvironment
+	closure       *environment
 	isInitializer bool
 }
 
-func newFn(decl *FunctionStmt, closure *loxEnvironment, isInitializer bool) *loxFn {
-	fn := new(loxFn)
+func newFn(decl *FunctionStmt, closure *environment, isInitializer bool) *function {
+	fn := new(function)
 	fn.decl = decl
 	fn.closure = closure
 	fn.isInitializer = isInitializer
 	return fn
 }
 
-func (fn *loxFn) String() string {
+func (fn *function) String() string {
 	return fmt.Sprintf("<fn %s>", fn.decl.Name.Lexeme)
 }
 
-func (fn *loxFn) arity() int {
+func (fn *function) arity() int {
 	return len(fn.decl.Params)
 }
 
-func (fn *loxFn) call(
+func (fn *function) call(
 	interpreter *Interpreter,
 	args []interface{},
 ) (interface{}, error) {
@@ -186,7 +186,7 @@ func (fn *loxFn) call(
 			instead of of `error` we can use a custom interface that is returned as the
 			second value like `error`
 		*/
-		if ret, ok := err.(*loxReturn); ok {
+		if ret, ok := err.(*callReturn); ok {
 			// return this if in an initalizer and no return value is given
 			if fn.isInitializer {
 				return fn.closure.getAt(0, "this"), nil
@@ -205,7 +205,7 @@ func (fn *loxFn) call(
 	return nil, nil
 }
 
-func (fn *loxFn) bind(inst *loxInstance) *loxFn {
+func (fn *function) bind(inst *instance) *function {
 	env := newEnvironment(fn.closure)
 	env.define("this", inst)
 	return newFn(fn.decl, env, fn.isInitializer)

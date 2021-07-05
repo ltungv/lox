@@ -5,8 +5,8 @@ import (
 	"io"
 )
 
-// loxCallable is implemented by Lox's objects that can be called.
-type loxCallable interface {
+// callable is implemented by Lox's objects that can be called.
+type callable interface {
 	arity() int
 	call(in *Interpreter, args []interface{}) (interface{}, error)
 }
@@ -14,8 +14,8 @@ type loxCallable interface {
 // Interpreter exposes methods for evaluating then given Lox syntax tree. This
 // struct implements ExprVisitor
 type Interpreter struct {
-	globals     *loxEnvironment
-	environment *loxEnvironment
+	globals     *environment
+	environment *environment
 	locals      map[Expr]int
 	output      io.Writer
 	reporter    Reporter
@@ -59,14 +59,14 @@ func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 		case *AssignExpr, *CallExpr:
 			/* expressions of these types are not printed */
 		default:
-			fmt.Fprintln(in.output, Stringify(expr))
+			fmt.Fprintln(in.output, stringify(expr))
 		}
 	}
 	return nil, nil
 }
 
 func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
-	var super *loxClass
+	var super *class
 	if stmt.Super != nil {
 		superObj, err := in.eval(stmt.Super)
 		if err != nil {
@@ -74,7 +74,7 @@ func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 		}
 
 		var isClass bool
-		super, isClass = superObj.(*loxClass)
+		super, isClass = superObj.(*class)
 		if !isClass {
 			return nil, newRuntimeError(stmt.Super.Name,
 				"Superclass must be a class.")
@@ -87,7 +87,7 @@ func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 		in.environment.define("super", super)
 	}
 
-	methods := make(map[string]*loxFn)
+	methods := make(map[string]*function)
 	for _, method := range stmt.Methods {
 		isInitializer := method.Name.Lexeme == "init"
 		fn := newFn(method, in.environment, isInitializer)
@@ -113,7 +113,7 @@ func (in *Interpreter) VisitIfStmt(stmt *IfStmt) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if Truthy(cond) {
+	if truthy(cond) {
 		return in.exec(stmt.ThenBranch)
 	} else if stmt.ElseBranch != nil {
 		return in.exec(stmt.ElseBranch)
@@ -126,7 +126,7 @@ func (in *Interpreter) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintln(in.output, Stringify(expr))
+	fmt.Fprintln(in.output, stringify(expr))
 	return nil, nil
 }
 
@@ -161,7 +161,7 @@ func (in *Interpreter) VisitWhileStmt(stmt *WhileStmt) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !Truthy(cond) {
+		if !truthy(cond) {
 			return nil, nil
 		}
 		_, err = in.exec(stmt.Body)
@@ -309,7 +309,7 @@ func (in *Interpreter) VisitCallExpr(expr *CallExpr) (interface{}, error) {
 		args = append(args, argVal)
 	}
 
-	callable, isCallable := callee.(loxCallable)
+	call, isCallable := callee.(callable)
 	if !isCallable {
 		return nil, newRuntimeError(expr.Paren, "Can only call functions and classes.")
 	}
@@ -319,12 +319,12 @@ func (in *Interpreter) VisitCallExpr(expr *CallExpr) (interface{}, error) {
 		be reimplemented by each object. We only has to do it once, if it's performed
 		here.
 	*/
-	if len(args) != callable.arity() {
+	if len(args) != call.arity() {
 		return nil, newRuntimeError(expr.Paren, fmt.Sprintf(
-			"Expected %d arguments but got %d.", callable.arity(), len(args),
+			"Expected %d arguments but got %d.", call.arity(), len(args),
 		))
 	}
-	return callable.call(in, args)
+	return call.call(in, args)
 }
 
 func (in *Interpreter) VisitGetExpr(expr *GetExpr) (interface{}, error) {
@@ -333,7 +333,7 @@ func (in *Interpreter) VisitGetExpr(expr *GetExpr) (interface{}, error) {
 		return nil, err
 	}
 
-	if inst, ok := obj.(*loxInstance); ok {
+	if inst, ok := obj.(*instance); ok {
 		return inst.get(expr.Name)
 	} else {
 		return nil, newRuntimeError(expr.Name, "Only instances have properties.")
@@ -356,11 +356,11 @@ func (in *Interpreter) VisitLogicalExpr(expr *LogicalExpr) (interface{}, error) 
 
 	switch expr.Op.Type {
 	case OR:
-		if Truthy(lhs) {
+		if truthy(lhs) {
 			return lhs, nil
 		}
 	case AND:
-		if !Truthy(lhs) {
+		if !truthy(lhs) {
 			return lhs, nil
 		}
 	default:
@@ -376,7 +376,7 @@ func (in *Interpreter) VisitSetExpr(expr *SetExpr) (interface{}, error) {
 		return nil, err
 	}
 
-	if obj, ok := obj.(*loxInstance); ok {
+	if obj, ok := obj.(*instance); ok {
 		val, err := in.eval(expr.Val)
 		if err != nil {
 			return nil, err
@@ -395,8 +395,8 @@ func (in *Interpreter) VisitSuperExpr(expr *SuperExpr) (interface{}, error) {
 	  `this` is always enclosed by the environment that contains `super`.
 	*/
 	steps := in.locals[expr]
-	super := in.environment.getAt(steps, "super").(*loxClass)
-	this := in.environment.getAt(steps-1, "this").(*loxInstance)
+	super := in.environment.getAt(steps, "super").(*class)
+	this := in.environment.getAt(steps-1, "this").(*instance)
 	method, hasMethod := super.findMethod(expr.Method.Lexeme)
 	if !hasMethod {
 		return nil, newRuntimeError(expr.Method, fmt.Sprintf(
@@ -418,7 +418,7 @@ func (in *Interpreter) VisitUnaryExpr(expr *UnaryExpr) (interface{}, error) {
 
 	switch expr.Op.Type {
 	case BANG:
-		return !Truthy(exprVal), nil
+		return !truthy(exprVal), nil
 	case MINUS:
 		if exprNum, ok := exprVal.(float64); ok {
 			return -exprNum, nil
@@ -432,9 +432,9 @@ func (in *Interpreter) VisitVarExpr(expr *VarExpr) (interface{}, error) {
 	return in.lookUpVar(expr.Name, expr)
 }
 
-func (in *Interpreter) execBlock(statements []Stmt, environment *loxEnvironment) error {
+func (in *Interpreter) execBlock(statements []Stmt, env *environment) error {
 	prevEnv := in.environment
-	in.environment = environment
+	in.environment = env
 	defer func() {
 		in.environment = prevEnv
 	}()

@@ -7,19 +7,19 @@ import "container/list"
 // scopes, it assumes the variable to be in the global scope.
 type scopeMap = map[string]bool
 
-type loxFnType = int
+type functionType = int
 
-type loxClassType = int
+type classType = int
 
 const (
-	callTypeNone loxFnType = iota
-	callTypeFunction
-	callTypeMethod
-	callTypeInitializer
+	functionTypeNone functionType = iota
+	functionTypeFunction
+	functionTypeMethod
+	functionTypeInitializer
 )
 
 const (
-	classTypeNone loxClassType = iota
+	classTypeNone classType = iota
 	classTypeClass
 	classTypeSubclass
 )
@@ -29,8 +29,8 @@ type Resolver struct {
 	scopes       *list.List
 	interpreter  *Interpreter
 	reporter     Reporter
-	currentFn    loxFnType
-	currentClass loxClassType
+	currentFn    functionType
+	currentClass classType
 }
 
 func NewResolver(interpreter *Interpreter, reporter Reporter) *Resolver {
@@ -38,7 +38,7 @@ func NewResolver(interpreter *Interpreter, reporter Reporter) *Resolver {
 	r.scopes = list.New()
 	r.interpreter = interpreter
 	r.reporter = reporter
-	r.currentFn = callTypeNone
+	r.currentFn = functionTypeNone
 	r.currentClass = classTypeNone
 	return r
 }
@@ -87,9 +87,9 @@ func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 	scope["this"] = true
 
 	for _, method := range stmt.Methods {
-		decl := callTypeMethod
+		decl := functionTypeMethod
 		if method.Name.Lexeme == "init" {
-			decl = callTypeInitializer
+			decl = functionTypeInitializer
 		}
 		r.resolveFunction(method, decl)
 	}
@@ -105,7 +105,7 @@ func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 func (r *Resolver) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
 	r.declare(stmt.Name)
 	r.define(stmt.Name)
-	r.resolveFunction(stmt, callTypeFunction)
+	r.resolveFunction(stmt, functionTypeFunction)
 	return nil, nil
 }
 
@@ -124,12 +124,12 @@ func (r *Resolver) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
 }
 
 func (r *Resolver) VisitReturnStmt(stmt *ReturnStmt) (interface{}, error) {
-	if r.currentFn == callTypeNone {
+	if r.currentFn == functionTypeNone {
 		r.reporter.Report(newCompileError(stmt.Keyword,
 			"Can't return from top-level code."))
 	}
 	if stmt.Val != nil {
-		if r.currentFn == callTypeInitializer {
+		if r.currentFn == functionTypeInitializer {
 			r.reporter.Report(newCompileError(stmt.Keyword,
 				"Can't return a value from an initializer."))
 		}
@@ -241,7 +241,7 @@ func (r *Resolver) VisitVarExpr(expr *VarExpr) (interface{}, error) {
 	return nil, nil
 }
 
-func (r *Resolver) resolveFunction(fn *FunctionStmt, fnType loxFnType) {
+func (r *Resolver) resolveFunction(fn *FunctionStmt, fnType functionType) {
 	enclosingFn := r.currentFn
 	r.currentFn = fnType
 

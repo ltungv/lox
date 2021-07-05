@@ -2,23 +2,23 @@ package lox
 
 import "fmt"
 
-type loxEnvironment struct {
-	enclosing *loxEnvironment
+type environment struct {
+	enclosing *environment
 	values    map[string]interface{}
 }
 
-func newEnvironment(enclosing *loxEnvironment) *loxEnvironment {
-	env := new(loxEnvironment)
+func newEnvironment(enclosing *environment) *environment {
+	env := new(environment)
 	env.enclosing = enclosing
 	env.values = make(map[string]interface{})
 	return env
 }
 
-func (env *loxEnvironment) define(name string, value interface{}) {
+func (env *environment) define(name string, value interface{}) {
 	env.values[name] = value
 }
 
-func (env *loxEnvironment) assign(name *Token, value interface{}) error {
+func (env *environment) assign(name *Token, value interface{}) error {
 	if _, ok := env.values[name.Lexeme]; ok {
 		env.values[name.Lexeme] = value
 		return nil
@@ -30,7 +30,7 @@ func (env *loxEnvironment) assign(name *Token, value interface{}) error {
 	return newRuntimeError(name, msg)
 }
 
-func (env *loxEnvironment) get(name *Token) (interface{}, error) {
+func (env *environment) get(name *Token) (interface{}, error) {
 	if value, ok := env.values[name.Lexeme]; ok {
 		return value, nil
 	}
@@ -41,15 +41,15 @@ func (env *loxEnvironment) get(name *Token) (interface{}, error) {
 	return nil, newRuntimeError(name, msg)
 }
 
-func (env *loxEnvironment) assignAt(steps int, name *Token, val interface{}) {
+func (env *environment) assignAt(steps int, name *Token, val interface{}) {
 	env.ancestor(steps).values[name.Lexeme] = val
 }
 
-func (env *loxEnvironment) getAt(steps int, name string) interface{} {
+func (env *environment) getAt(steps int, name string) interface{} {
 	return env.ancestor(steps).values[name]
 }
 
-func (env *loxEnvironment) ancestor(steps int) *loxEnvironment {
+func (env *environment) ancestor(steps int) *environment {
 	iterEnv := env
 	for i := 0; i < steps; i++ {
 		iterEnv = iterEnv.enclosing
