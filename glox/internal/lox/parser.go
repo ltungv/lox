@@ -110,7 +110,7 @@ func (parser *Parser) function(kind string) (*FunctionStmt, error) {
 	params := make([]*Token, 0)
 	if !parser.check(R_PAREN) {
 		for {
-			if len(params) > MAX_ARGS_COUNT {
+			if len(params) >= MAX_ARGS_COUNT {
 				parser.reporter.Report(newCompileError(
 					parser.peek(),
 					fmt.Sprintf("Can't have more than %d parameters.", MAX_ARGS_COUNT),

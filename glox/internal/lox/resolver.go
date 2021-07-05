@@ -295,7 +295,7 @@ func (r *Resolver) declare(name *Token) {
 		scope := r.scopes.Front().Value.(scopeMap)
 		if _, hasName := scope[name.Lexeme]; hasName {
 			r.reporter.Report(newCompileError(name,
-				"Already has a variable with this name in this scope"))
+				"Already a variable with this name in this scope."))
 		}
 		scope[name.Lexeme] = false
 	}

@@ -138,7 +138,7 @@ func (fn *loxNativeFnClock) call(
 }
 
 func (fn *loxNativeFnClock) String() string {
-	return "<native fn clock/0>"
+	return "<native fn>"
 }
 
 // loxFn represents a lox function that can be called
@@ -157,7 +157,7 @@ func newFn(decl *FunctionStmt, closure *loxEnvironment, isInitializer bool) *lox
 }
 
 func (fn *loxFn) String() string {
-	return fmt.Sprintf("<fn %s/%d>", fn.decl.Name.Lexeme, fn.arity())
+	return fmt.Sprintf("<fn %s>", fn.decl.Name.Lexeme)
 }
 
 func (fn *loxFn) arity() int {
