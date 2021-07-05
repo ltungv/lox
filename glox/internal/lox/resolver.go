@@ -21,6 +21,7 @@ const (
 const (
 	classTypeNone loxClassType = iota
 	classTypeClass
+	classTypeSubclass
 )
 
 // Resolver performs semantics analysis on the syntax tree.
@@ -69,12 +70,16 @@ func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 	r.declare(stmt.Name)
 	r.define(stmt.Name)
 
-	if stmt.Superclass != nil {
-		if stmt.Superclass.Name.Lexeme == stmt.Name.Lexeme {
-			r.reporter.Report(newResolveError(stmt.Superclass.Name,
+	if stmt.Super != nil {
+		if stmt.Super.Name.Lexeme == stmt.Name.Lexeme {
+			r.reporter.Report(newResolveError(stmt.Super.Name,
 				"A class can't inherit from itself."))
 		}
-		r.resolveExpr(stmt.Superclass)
+		r.currentClass = classTypeSubclass
+		r.resolveExpr(stmt.Super)
+		r.beginScope()
+		scope := r.scopes.Front().Value.(scopeMap)
+		scope["super"] = true
 	}
 
 	r.beginScope()
@@ -90,6 +95,9 @@ func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 	}
 
 	r.endScope()
+	if stmt.Super != nil {
+		r.endScope()
+	}
 	r.currentClass = enclosingClass
 	return nil, nil
 }
@@ -189,6 +197,19 @@ func (r *Resolver) VisitLogicalExpr(expr *LogicalExpr) (interface{}, error) {
 func (r *Resolver) VisitSetExpr(expr *SetExpr) (interface{}, error) {
 	r.resolveExpr(expr.Val)
 	r.resolveExpr(expr.Obj)
+	return nil, nil
+}
+
+func (r *Resolver) VisitSuperExpr(expr *SuperExpr) (interface{}, error) {
+	if r.currentClass == classTypeNone {
+		r.reporter.Report(newResolveError(expr.Keyword,
+			"Can't use 'super' outside of a class."))
+	} else if r.currentClass == classTypeClass {
+		r.reporter.Report(newResolveError(expr.Keyword,
+			"Can't use 'super' in a class with no superclass."))
+	}
+
+	r.resolveLocal(expr, expr.Keyword)
 	return nil, nil
 }
 

@@ -39,7 +39,8 @@ Grammars
 	call       --> primary ( "(" args? ")" | "." IDENT )* ;
 	args       --> expr ( "," expr )* ;
 	primary    --> NUMBER | STRING | IDENT
-	             | "true" | "false" | "nil" | "this"
+	             | "true" | "false" | "nil"
+	             | "this" | "super" "." IDENT
 	             | "(" expr ")" ;
 
 "unary" rule has some matches for error generations:

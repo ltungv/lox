@@ -47,10 +47,8 @@ func (class *loxClass) String() string {
 	return class.name
 }
 
-// TODO: The arity is 0 for, it will be changed when we allow user-defined
-// constructor
 func (class *loxClass) arity() int {
-	if init, ok := class.methods["init"]; ok {
+	if init, ok := class.findMethod("init"); ok {
 		return init.arity()
 	}
 	return 0
@@ -61,10 +59,19 @@ func (class *loxClass) call(
 	args []interface{},
 ) (interface{}, error) {
 	instance := newInstance(class)
-	if init, ok := class.methods["init"]; ok {
+	// call the initializer on the instance if it's defined
+	if init, ok := class.findMethod("init"); ok {
 		init.bind(instance).call(interpreter, args)
 	}
 	return instance, nil
+}
+
+func (class *loxClass) findMethod(name string) (*loxFn, bool) {
+	method, ok := class.methods[name]
+	if !ok && class.super != nil {
+		method, ok = class.super.findMethod(name)
+	}
+	return method, ok
 }
 
 type loxInstance struct {
@@ -88,12 +95,14 @@ func (inst *loxInstance) get(name *Token) (interface{}, error) {
 		return val, nil
 	}
 
-	if method, ok := inst.class.methods[name.Lexeme]; ok {
+  // create a bound method on the instance, such that `this` always
+  // refers to the instant that gave out the method
+	if method, ok := inst.class.findMethod(name.Lexeme); ok {
 		return method.bind(inst), nil
 	}
 
 	return nil, newRuntimeError(name, fmt.Sprintf(
-		"Underfined property '%s'.", name.Lexeme,
+		"Undefined property '%s'.", name.Lexeme,
 	))
 }
 
@@ -189,6 +198,8 @@ func (fn *loxFn) call(
 	}
 
 	if fn.isInitializer {
+		// an empty return statement inside the class' `init` method will return
+		// `this` instead of nil
 		return fn.closure.getAt(0, "this"), nil
 	}
 

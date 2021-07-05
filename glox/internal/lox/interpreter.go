@@ -67,8 +67,8 @@ func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 
 func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 	var super *loxClass
-	if stmt.Superclass != nil {
-		superObj, err := in.eval(stmt.Superclass)
+	if stmt.Super != nil {
+		superObj, err := in.eval(stmt.Super)
 		if err != nil {
 			return nil, err
 		}
@@ -76,9 +76,15 @@ func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 		var isClass bool
 		super, isClass = superObj.(*loxClass)
 		if !isClass {
-			return nil, newRuntimeError(stmt.Superclass.Name,
+			return nil, newRuntimeError(stmt.Super.Name,
 				"Superclass must be a class.")
 		}
+
+		// This env holds a references to the superclass of this class,
+		// the reference will never change. Any method give out by the subclass
+		// will have this env attached to its closure.
+		in.environment = newEnvironment(in.environment)
+		in.environment.define("super", super)
 	}
 
 	methods := make(map[string]*loxFn)
@@ -88,6 +94,10 @@ func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 		methods[method.Name.Lexeme] = fn
 	}
 	class := newClass(stmt.Name.Lexeme, super, methods)
+	if super != nil {
+		// pop the environment for superclass
+		in.environment = in.environment.enclosing
+	}
 	in.environment.define(stmt.Name.Lexeme, class)
 	return nil, nil
 }
@@ -376,6 +386,24 @@ func (in *Interpreter) VisitSetExpr(expr *SetExpr) (interface{}, error) {
 	} else {
 		return nil, newRuntimeError(expr.Name, "Only instances have fields.")
 	}
+}
+
+func (in *Interpreter) VisitSuperExpr(expr *SuperExpr) (interface{}, error) {
+	/*
+	  In a return expression, there's no convient node for the resolver to hang
+	  the resolution steps to `this`. But we know that the environment that contains
+	  `this` is always enclosed by the environment that contains `super`.
+	*/
+	steps := in.locals[expr]
+	super := in.environment.getAt(steps, "super").(*loxClass)
+	this := in.environment.getAt(steps-1, "this").(*loxInstance)
+	method, hasMethod := super.findMethod(expr.Method.Lexeme)
+	if !hasMethod {
+		return nil, newRuntimeError(expr.Method, fmt.Sprintf(
+			"Undefined property '%s'.", expr.Method.Lexeme,
+		))
+	}
+	return method.bind(this), nil
 }
 
 func (in *Interpreter) VisitThisExpr(expr *ThisExpr) (interface{}, error) {

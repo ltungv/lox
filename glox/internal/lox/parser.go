@@ -574,6 +574,18 @@ func (parser *Parser) primary() (Expr, error) {
 	if parser.match(THIS) {
 		return NewThisExpr(parser.prev()), nil
 	}
+	if parser.match(SUPER) {
+		keyword := parser.prev()
+		_, err := parser.consume(DOT, "Expect '.' after 'super'.")
+		if err != nil {
+			return nil, err
+		}
+		method, err := parser.consume(IDENT, "Expect superclass method name.")
+		if err != nil {
+			return nil, err
+		}
+		return NewSuperExpr(keyword, method), nil
+	}
 	if parser.match(FALSE) {
 		return NewLiteralExpr(false), nil
 	}

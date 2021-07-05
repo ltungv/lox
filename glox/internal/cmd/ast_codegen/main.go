@@ -28,13 +28,14 @@ func main() {
 		"Literal: Val interface{}",
 		"Logical: Op *Token, Lhs Expr, Rhs Expr",
 		"Set: Obj Expr, Name *Token, Val Expr",
+		"Super: Keyword *Token, Method *Token",
 		"This: Keyword *Token",
 		"Unary: Op *Token, Expr Expr",
 		"Var: Name *Token",
 	}
 	statementTypes := []string{
 		"Block: Stmts []Stmt",
-		"Class: Name *Token, Superclass *VarExpr, Methods []*FunctionStmt",
+		"Class: Name *Token, Super *VarExpr, Methods []*FunctionStmt",
 		"Expr: Expr Expr",
 		"Function: Name *Token, Params []*Token, Body []Stmt",
 		"If: Cond Expr, ThenBranch Stmt, ElseBranch Stmt",
