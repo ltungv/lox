@@ -72,7 +72,7 @@ func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 
 	if stmt.Super != nil {
 		if stmt.Super.Name.Lexeme == stmt.Name.Lexeme {
-			r.reporter.Report(newResolveError(stmt.Super.Name,
+			r.reporter.Report(newCompileError(stmt.Super.Name,
 				"A class can't inherit from itself."))
 		}
 		r.currentClass = classTypeSubclass
@@ -125,12 +125,12 @@ func (r *Resolver) VisitPrintStmt(stmt *PrintStmt) (interface{}, error) {
 
 func (r *Resolver) VisitReturnStmt(stmt *ReturnStmt) (interface{}, error) {
 	if r.currentFn == callTypeNone {
-		r.reporter.Report(newResolveError(stmt.Keyword,
+		r.reporter.Report(newCompileError(stmt.Keyword,
 			"Can't return from top-level code."))
 	}
 	if stmt.Val != nil {
 		if r.currentFn == callTypeInitializer {
-			r.reporter.Report(newResolveError(stmt.Keyword,
+			r.reporter.Report(newCompileError(stmt.Keyword,
 				"Can't return a value from an initializer."))
 		}
 		r.resolveExpr(stmt.Val)
@@ -202,10 +202,10 @@ func (r *Resolver) VisitSetExpr(expr *SetExpr) (interface{}, error) {
 
 func (r *Resolver) VisitSuperExpr(expr *SuperExpr) (interface{}, error) {
 	if r.currentClass == classTypeNone {
-		r.reporter.Report(newResolveError(expr.Keyword,
+		r.reporter.Report(newCompileError(expr.Keyword,
 			"Can't use 'super' outside of a class."))
 	} else if r.currentClass == classTypeClass {
-		r.reporter.Report(newResolveError(expr.Keyword,
+		r.reporter.Report(newCompileError(expr.Keyword,
 			"Can't use 'super' in a class with no superclass."))
 	}
 
@@ -215,7 +215,7 @@ func (r *Resolver) VisitSuperExpr(expr *SuperExpr) (interface{}, error) {
 
 func (r *Resolver) VisitThisExpr(expr *ThisExpr) (interface{}, error) {
 	if r.currentClass == classTypeNone {
-		r.reporter.Report(newResolveError(expr.Keyword,
+		r.reporter.Report(newCompileError(expr.Keyword,
 			"Can't use 'this' outside of a class."))
 		return nil, nil
 	}
@@ -232,7 +232,7 @@ func (r *Resolver) VisitVarExpr(expr *VarExpr) (interface{}, error) {
 	if r.scopes.Front() != nil {
 		scopeMap := r.scopes.Front().Value.(scopeMap)
 		if defined, exist := scopeMap[expr.Name.Lexeme]; exist && !defined {
-			r.reporter.Report(newResolveError(expr.Name,
+			r.reporter.Report(newCompileError(expr.Name,
 				"Can't read local variable in its own initializer."))
 		}
 	}
@@ -294,7 +294,7 @@ func (r *Resolver) declare(name *Token) {
 	if r.scopes.Front() != nil {
 		scope := r.scopes.Front().Value.(scopeMap)
 		if _, hasName := scope[name.Lexeme]; hasName {
-			r.reporter.Report(newParseError(name,
+			r.reporter.Report(newCompileError(name,
 				"Already has a variable with this name in this scope"))
 		}
 		scope[name.Lexeme] = false

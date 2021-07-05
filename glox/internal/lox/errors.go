@@ -2,13 +2,11 @@ package lox
 
 import "fmt"
 
-// scanError indicates the lexical grammar of the source code is invalid
 type scanError struct {
 	line    int
 	message string
 }
 
-// newScanError creates a new ScanError
 func newScanError(line int, message string) error {
 	e := new(scanError)
 	e.line = line
@@ -24,21 +22,19 @@ func (err *scanError) Error() string {
 	)
 }
 
-// ParserError indicates the syntactic grammar of the source code is invalid
-type parseError struct {
+type compileError struct {
 	token   *Token
 	message string
 }
 
-// newParseError creates a new ParseError
-func newParseError(token *Token, message string) error {
-	e := new(parseError)
+func newCompileError(token *Token, message string) error {
+	e := new(compileError)
 	e.token = token
 	e.message = message
 	return e
 }
 
-func (err *parseError) Error() string {
+func (err *compileError) Error() string {
 	var loc string
 	if err.token.Type == EOF {
 		loc = "end"
@@ -54,13 +50,11 @@ func (err *parseError) Error() string {
 	)
 }
 
-// runtimeError represents any error that the interpreter detects when running
 type runtimeError struct {
 	token   *Token
 	message string
 }
 
-// newRuntimeError creates a new RuntimeError
 func newRuntimeError(token *Token, message string) error {
 	e := new(runtimeError)
 	e.token = token
@@ -78,37 +72,6 @@ func (err *runtimeError) Error() string {
 
 	return fmt.Sprintf(
 		"[line %d] RuntimeError at %s: %s",
-		err.token.Line,
-		loc,
-		err.message,
-	)
-}
-
-// ResolveError represents any error that the interpreter detects when resolving
-// the syntax tree
-type resolveError struct {
-	token   *Token
-	message string
-}
-
-// newResolveError creates a new ResolveError
-func newResolveError(token *Token, message string) error {
-	e := new(resolveError)
-	e.token = token
-	e.message = message
-	return e
-}
-
-func (err *resolveError) Error() string {
-	var loc string
-	if err.token.Type == EOF {
-		loc = "end"
-	} else {
-		loc = "'" + err.token.Lexeme + "'"
-	}
-
-	return fmt.Sprintf(
-		"[line %d] ResolveError at %s: %s",
 		err.token.Line,
 		loc,
 		err.message,

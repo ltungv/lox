@@ -95,8 +95,8 @@ func (inst *loxInstance) get(name *Token) (interface{}, error) {
 		return val, nil
 	}
 
-  // create a bound method on the instance, such that `this` always
-  // refers to the instant that gave out the method
+	// create a bound method on the instance, such that `this` always
+	// refers to the instant that gave out the method
 	if method, ok := inst.class.findMethod(name.Lexeme); ok {
 		return method.bind(inst), nil
 	}

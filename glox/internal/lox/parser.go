@@ -111,7 +111,7 @@ func (parser *Parser) function(kind string) (*FunctionStmt, error) {
 	if !parser.check(R_PAREN) {
 		for {
 			if len(params) > MAX_ARGS_COUNT {
-				parser.reporter.Report(newParseError(
+				parser.reporter.Report(newCompileError(
 					parser.peek(),
 					fmt.Sprintf("Can't have more than %d parameters.", MAX_ARGS_COUNT),
 				))
@@ -388,7 +388,7 @@ func (parser *Parser) assign() (Expr, error) {
 		case *GetExpr:
 			return NewSetExpr(lhs.Obj, lhs.Name, rhs), nil
 		default:
-			parser.reporter.Report(newParseError(op, "Invalid assignment target."))
+			parser.reporter.Report(newCompileError(op, "Invalid assignment target."))
 		}
 	}
 	return lhs, nil
@@ -495,7 +495,7 @@ func (parser *Parser) unary() (Expr, error) {
 		op := parser.prev()
 		switch expr, err := parser.unary(); op.Type {
 		case PLUS, SLASH, STAR:
-			err = newParseError(
+			err = newCompileError(
 				op,
 				fmt.Sprintf("Unary '%s' expressions are not supported.", op.Lexeme),
 			)
@@ -545,7 +545,7 @@ func (parser *Parser) finishCall(callee Expr) (Expr, error) {
 	if !parser.check(R_PAREN) {
 		for {
 			if len(args) >= MAX_ARGS_COUNT {
-				parser.reporter.Report(newParseError(
+				parser.reporter.Report(newCompileError(
 					parser.peek(),
 					fmt.Sprintf("Can't have more than %d arguments.", MAX_ARGS_COUNT),
 				))
@@ -612,7 +612,7 @@ func (parser *Parser) primary() (Expr, error) {
 		}
 		return NewGroupExpr(expr), nil
 	}
-	return nil, newParseError(parser.peek(), "Expect expression.")
+	return nil, newCompileError(parser.peek(), "Expect expression.")
 }
 
 func (parser *Parser) match(types ...TokenType) bool {
@@ -630,7 +630,7 @@ func (parser *Parser) consume(typ TokenType, message string) (*Token, error) {
 		token := parser.advance()
 		return token, nil
 	}
-	return nil, newParseError(parser.peek(), message)
+	return nil, newCompileError(parser.peek(), message)
 }
 
 func (parser *Parser) check(tt TokenType) bool {
