@@ -18,10 +18,12 @@ func main() {
 		os.Exit(64)
 	}
 
+	reporter := lox.NewSimpleReporter(os.Stderr)
+	interpreter := lox.NewInterpreter(os.Stdout, reporter, false)
 	if len(args) != 1 {
-		runPrompt()
+		runPrompt(interpreter, reporter)
 	} else {
-		runFile(args[0])
+		runFile(args[0], interpreter, reporter)
 	}
 }
 
@@ -33,21 +35,16 @@ func run(script string, interpreter *lox.Interpreter, reporter lox.Reporter) {
 	if reporter.HadError() {
 		return
 	}
-
 	resolver := lox.NewResolver(interpreter, reporter)
 	resolver.Resolve(statements)
 	if reporter.HadError() {
 		return
 	}
-
 	interpreter.Interpret(statements)
 }
 
 // Run the interpreter in REPL mode
-func runPrompt() {
-	reporter := lox.NewSimpleReporter(os.Stdout)
-	interpreter := lox.NewInterpreter(os.Stdout, reporter, true)
-
+func runPrompt(interpreter *lox.Interpreter, reporter lox.Reporter) {
 	s := bufio.NewScanner(os.Stdin)
 	s.Split(bufio.ScanLines)
 	for {
@@ -62,14 +59,11 @@ func runPrompt() {
 }
 
 // Run the given file as script
-func runFile(fpath string) {
+func runFile(fpath string, interpreter *lox.Interpreter, reporter lox.Reporter) {
 	bytes, err := ioutil.ReadFile(fpath)
 	exitOnError(err, 1)
 
-	reporter := lox.NewSimpleReporter(os.Stdout)
-	interpreter := lox.NewInterpreter(os.Stdout, reporter, false)
 	run(string(bytes), interpreter, reporter)
-
 	exitIf(reporter.HadError(), 65)
 	exitIf(reporter.HadRuntimeError(), 70)
 }

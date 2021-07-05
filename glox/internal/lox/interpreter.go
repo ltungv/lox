@@ -179,9 +179,9 @@ func (in *Interpreter) VisitAssignExpr(expr *AssignExpr) (interface{}, error) {
 
 	if steps, ok := in.locals[expr]; ok {
 		in.environment.assignAt(steps, expr.Name, val)
-		return nil, nil
+		return val, nil
 	} else {
-		return nil, in.globals.assign(expr.Name, val)
+		return val, in.globals.assign(expr.Name, val)
 	}
 }
 
@@ -211,7 +211,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum > rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 
 	case GREATER_EQUAL:
 		leftNum, okLeftNum := lhs.(float64)
@@ -220,7 +220,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum >= rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 
 	case LESS:
 		leftNum, okLeftNum := lhs.(float64)
@@ -229,7 +229,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum < rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 
 	case LESS_EQUAL:
 		leftNum, okLeftNum := lhs.(float64)
@@ -238,7 +238,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum <= rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 
 	case MINUS:
 		leftNum, okLeftNum := lhs.(float64)
@@ -247,7 +247,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum - rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 
 	case PLUS:
 		leftStr, okLeftStr := lhs.(string)
@@ -272,7 +272,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum / rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 
 	case STAR:
 		leftNum, okLeftNum := lhs.(float64)
@@ -281,7 +281,7 @@ func (in *Interpreter) VisitBinaryExpr(expr *BinaryExpr) (interface{}, error) {
 			result := leftNum * rightNum
 			return result, nil
 		}
-		return nil, newRuntimeError(expr.Op, "Operand must be numbers.")
+		return nil, newRuntimeError(expr.Op, "Operands must be numbers.")
 	}
 	panic("Unreachable")
 }

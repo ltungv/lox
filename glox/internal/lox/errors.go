@@ -63,17 +63,9 @@ func newRuntimeError(token *Token, message string) error {
 }
 
 func (err *runtimeError) Error() string {
-	var loc string
-	if err.token.Type == EOF {
-		loc = "end"
-	} else {
-		loc = "'" + err.token.Lexeme + "'"
-	}
-
 	return fmt.Sprintf(
-		"[line %d] RuntimeError at %s: %s",
-		err.token.Line,
-		loc,
+		"%s\n[line %d]",
 		err.message,
+		err.token.Line,
 	)
 }
