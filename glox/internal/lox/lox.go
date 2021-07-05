@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"time"
-	"unicode"
 )
 
 func Stringify(v interface{}) string {
@@ -210,12 +209,4 @@ func (fn *loxFn) bind(inst *loxInstance) *loxFn {
 	env := newEnvironment(fn.closure)
 	env.define("this", inst)
 	return newFn(fn.decl, env, fn.isInitializer)
-}
-
-func isAlphanumeric(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r)
-}
-
-func isBeginIdent(r rune) bool {
-	return unicode.IsLetter(r) || r == '_'
 }

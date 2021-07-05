@@ -106,7 +106,7 @@ func (scanner *Scanner) Scan() []*Token {
 		default:
 			if unicode.IsDigit(r) {
 				scanner.scanNumber()
-			} else if isBeginIdent(r) {
+			} else if isIdentBegin(r) {
 				scanner.scanIdentifier()
 			} else {
 				scanner.reporter.Report(
@@ -165,7 +165,7 @@ func (scanner *Scanner) scanNumber() {
 }
 
 func (scanner *Scanner) scanIdentifier() {
-	for isAlphanumeric(scanner.peek()) {
+	for isIdentRune(scanner.peek()) {
 		scanner.advance()
 	}
 	lexeme := string(scanner.source[scanner.start:scanner.current])

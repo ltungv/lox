@@ -1,6 +1,9 @@
 package lox
 
-import "fmt"
+import (
+	"fmt"
+	"unicode"
+)
 
 const MAX_ARGS_COUNT = 255
 
@@ -671,4 +674,12 @@ func (parser *Parser) sync() {
 		}
 		parser.advance()
 	}
+}
+
+func isIdentRune(r rune) bool {
+	return isIdentBegin(r) || unicode.IsDigit(r)
+}
+
+func isIdentBegin(r rune) bool {
+	return unicode.IsLetter(r) || r == '_'
 }
