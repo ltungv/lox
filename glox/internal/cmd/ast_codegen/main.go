@@ -34,7 +34,7 @@ func main() {
 	}
 	statementTypes := []string{
 		"Block: Stmts []Stmt",
-		"Class: Name *Token, Methods []*FunctionStmt",
+		"Class: Name *Token, Superclass *VarExpr, Methods []*FunctionStmt",
 		"Expr: Expr Expr",
 		"Function: Name *Token, Params []*Token, Body []Stmt",
 		"If: Cond Expr, ThenBranch Stmt, ElseBranch Stmt",

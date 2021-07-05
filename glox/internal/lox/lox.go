@@ -1,3 +1,4 @@
+// This file mostly contains structs that represent lox objects at runtime.
 package lox
 
 import (
@@ -30,12 +31,14 @@ func Truthy(value interface{}) bool {
 
 type loxClass struct {
 	name    string
+	super   *loxClass
 	methods map[string]*loxFn
 }
 
-func newClass(name string, methods map[string]*loxFn) *loxClass {
+func newClass(name string, super *loxClass, methods map[string]*loxFn) *loxClass {
 	class := new(loxClass)
 	class.name = name
+	class.super = super
 	class.methods = methods
 	return class
 }

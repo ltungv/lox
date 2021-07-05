@@ -59,6 +59,15 @@ func (parser *Parser) classDecl() (Stmt, error) {
 		return nil, err
 	}
 
+	var super *VarExpr
+	if parser.match(LESS) {
+		name, err := parser.consume(IDENT, "Expect superclass name.")
+		if err != nil {
+			return nil, err
+		}
+		super = NewVarExpr(name)
+	}
+
 	_, err = parser.consume(L_BRACE, "Expect '{' before class body.")
 	if err != nil {
 		return nil, err
@@ -76,7 +85,7 @@ func (parser *Parser) classDecl() (Stmt, error) {
 		return nil, err
 	}
 
-	return NewClassStmt(name, methods), nil
+	return NewClassStmt(name, super, methods), nil
 }
 
 // The parameter "kind" is used to control the error message when this method is

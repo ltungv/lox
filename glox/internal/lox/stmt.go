@@ -26,12 +26,13 @@ func (stmt *BlockStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 }
 
 type ClassStmt struct {
-	Name    *Token
-	Methods []*FunctionStmt
+	Name       *Token
+	Superclass *VarExpr
+	Methods    []*FunctionStmt
 }
 
-func NewClassStmt(Name *Token, Methods []*FunctionStmt) *ClassStmt {
-	return &ClassStmt{Name, Methods}
+func NewClassStmt(Name *Token, Superclass *VarExpr, Methods []*FunctionStmt) *ClassStmt {
+	return &ClassStmt{Name, Superclass, Methods}
 }
 func (stmt *ClassStmt) Accept(visitor StmtVisitor) (interface{}, error) {
 	return visitor.VisitClassStmt(stmt)

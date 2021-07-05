@@ -66,13 +66,28 @@ func (in *Interpreter) VisitExprStmt(stmt *ExprStmt) (interface{}, error) {
 }
 
 func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
+	var super *loxClass
+	if stmt.Superclass != nil {
+		superObj, err := in.eval(stmt.Superclass)
+		if err != nil {
+			return nil, err
+		}
+
+		var isClass bool
+		super, isClass = superObj.(*loxClass)
+		if !isClass {
+			return nil, newRuntimeError(stmt.Superclass.Name,
+				"Superclass must be a class.")
+		}
+	}
+
 	methods := make(map[string]*loxFn)
 	for _, method := range stmt.Methods {
 		isInitializer := method.Name.Lexeme == "init"
 		fn := newFn(method, in.environment, isInitializer)
 		methods[method.Name.Lexeme] = fn
 	}
-	class := newClass(stmt.Name.Lexeme, methods)
+	class := newClass(stmt.Name.Lexeme, super, methods)
 	in.environment.define(stmt.Name.Lexeme, class)
 	return nil, nil
 }

@@ -69,6 +69,14 @@ func (r *Resolver) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 	r.declare(stmt.Name)
 	r.define(stmt.Name)
 
+	if stmt.Superclass != nil {
+		if stmt.Superclass.Name.Lexeme == stmt.Name.Lexeme {
+			r.reporter.Report(newResolveError(stmt.Superclass.Name,
+				"A class can't inherit from itself."))
+		}
+		r.resolveExpr(stmt.Superclass)
+	}
+
 	r.beginScope()
 	scope := r.scopes.Front().Value.(scopeMap)
 	scope["this"] = true

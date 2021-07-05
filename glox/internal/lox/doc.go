@@ -6,11 +6,11 @@ Grammars
 	             | funDecl
 	             | varDecl
 	             | stmt ;
-	classDecl  --> "class" IDENTIFIER "{" function* "}" ;
+	classDecl  --> "class" IDENT ( "<" IDENT )? "{" function* "}" ;
 	funDecl    --> "fun" function ;
-	function   --> IDENTIFIER "(" params? ")" block ;
-	params     --> IDENTIFIER ( "," IDENTIFIER )* ;
-	varDecl    --> "var" IDENTIFIER ( "=" expr )? ";" ;
+	function   --> IDENT "(" params? ")" block ;
+	params     --> IDENT ( "," IDENT )* ;
+	varDecl    --> "var" IDENT ( "=" expr )? ";" ;
 	stmt       --> block
 	             | exprStmt
 	             | forStmt
@@ -26,7 +26,7 @@ Grammars
 	returnStmt --> "return" expr? ";" ;
 	whileStmt  --> "while" "(" expr ")" stmt ;
 	expr       --> assign ;
-	assign     --> ( call "." )? IDENTIFIER "=" expr ";"
+	assign     --> ( call "." )? IDENT "=" expr ";"
 	             | or ;
 	or         --> and ( "or" and )* ;
 	and        --> equality ( "and" equality )* ;
@@ -36,9 +36,9 @@ Grammars
 	factor     --> unary ( ( "/" | "*" ) unary )* ;
 	unary      --> ( "!" | "-" | "+" | "/" | "*" ) unary
 	             | call ;
-	call       --> primary ( "(" args? ")" | "." IDENTIFIER )* ;
+	call       --> primary ( "(" args? ")" | "." IDENT )* ;
 	args       --> expr ( "," expr )* ;
-	primary    --> NUMBER | STRING | IDENTIFIER
+	primary    --> NUMBER | STRING | IDENT
 	             | "true" | "false" | "nil" | "this"
 	             | "(" expr ")" ;
 
