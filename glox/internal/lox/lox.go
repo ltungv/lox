@@ -113,7 +113,7 @@ type callReturn struct {
 	val interface{}
 }
 
-func newReturn(val interface{}) *callReturn {
+func newCallReturn(val interface{}) *callReturn {
 	r := new(callReturn)
 	r.val = val
 	return r
@@ -123,20 +123,20 @@ func (r *callReturn) Error() string {
 	return fmt.Sprintf("return %v", stringify(r.val))
 }
 
-type loxNativeFnClock struct{}
+type functionClock struct{}
 
-func (fn *loxNativeFnClock) arity() int {
+func (fn *functionClock) arity() int {
 	return 0
 }
 
-func (fn *loxNativeFnClock) call(
+func (fn *functionClock) call(
 	in *Interpreter,
 	args []interface{},
 ) (interface{}, error) {
 	return time.Since(time.Unix(0, 0)).Seconds(), nil
 }
 
-func (fn *loxNativeFnClock) String() string {
+func (fn *functionClock) String() string {
 	return "<native fn>"
 }
 
@@ -147,7 +147,7 @@ type function struct {
 	isInitializer bool
 }
 
-func newFn(decl *FunctionStmt, closure *environment, isInitializer bool) *function {
+func newFunction(decl *FunctionStmt, closure *environment, isInitializer bool) *function {
 	fn := new(function)
 	fn.decl = decl
 	fn.closure = closure
@@ -208,5 +208,5 @@ func (fn *function) call(
 func (fn *function) bind(inst *instance) *function {
 	env := newEnvironment(fn.closure)
 	env.define("this", inst)
-	return newFn(fn.decl, env, fn.isInitializer)
+	return newFunction(fn.decl, env, fn.isInitializer)
 }

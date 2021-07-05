@@ -24,7 +24,7 @@ type Interpreter struct {
 
 func NewInterpreter(output io.Writer, reporter Reporter, isREPL bool) *Interpreter {
 	env := newEnvironment(nil)
-	env.define("clock", new(loxNativeFnClock))
+	env.define("clock", new(functionClock))
 
 	interpreter := new(Interpreter)
 	interpreter.globals = env
@@ -90,7 +90,7 @@ func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 	methods := make(map[string]*function)
 	for _, method := range stmt.Methods {
 		isInitializer := method.Name.Lexeme == "init"
-		fn := newFn(method, in.environment, isInitializer)
+		fn := newFunction(method, in.environment, isInitializer)
 		methods[method.Name.Lexeme] = fn
 	}
 	class := newClass(stmt.Name.Lexeme, super, methods)
@@ -103,7 +103,7 @@ func (in *Interpreter) VisitClassStmt(stmt *ClassStmt) (interface{}, error) {
 }
 
 func (in *Interpreter) VisitFunctionStmt(stmt *FunctionStmt) (interface{}, error) {
-	fn := newFn(stmt, in.environment, false)
+	fn := newFunction(stmt, in.environment, false)
 	in.environment.define(stmt.Name.Lexeme, fn)
 	return nil, nil
 }
@@ -152,7 +152,7 @@ func (in *Interpreter) VisitReturnStmt(stmt *ReturnStmt) (interface{}, error) {
 			return nil, err
 		}
 	}
-	return nil, newReturn(val)
+	return nil, newCallReturn(val)
 }
 
 func (in *Interpreter) VisitWhileStmt(stmt *WhileStmt) (interface{}, error) {
