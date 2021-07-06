@@ -16,7 +16,7 @@ impl<'a> VM<'a> {
     }
 
     /// Run the virtual machine with it currently given chunk.
-    pub fn run(&mut self) -> Result<()> {
+    fn run(&mut self) -> Result<()> {
         let chunk = match self.chunk {
             Some(c) => c,
             None => return Ok(()),

@@ -6,7 +6,7 @@ pub fn compile(src: &str) -> Result<()> {
     let mut s = Scanner::new(src);
     let mut line = None;
     loop {
-        let token = s.scan()?;
+        let token = s.scan();
         if line.is_none() || token.line != line.unwrap() {
             print!("{:4} ", token.line);
             line = Some(token.line);
@@ -24,7 +24,7 @@ pub fn compile(src: &str) -> Result<()> {
 /// Scanner reads characters from the source code and groups them in to
 /// a sequence of tokens.
 #[derive(Debug)]
-pub struct Scanner<'a> {
+struct Scanner<'a> {
     src: &'a str,
     start: usize,
     current: usize,
@@ -33,7 +33,7 @@ pub struct Scanner<'a> {
 
 impl<'a> Scanner<'a> {
     /// Create a new scanner
-    pub fn new(src: &'a str) -> Self {
+    fn new(src: &'a str) -> Self {
         Self {
             src,
             start: 0,
@@ -43,51 +43,56 @@ impl<'a> Scanner<'a> {
     }
 
     /// Consume and return the next token from source.
-    pub fn scan(&mut self) -> Result<Token> {
+    fn scan(&mut self) -> Token {
         self.skip_whitespaces();
         self.start = self.current;
         if self.eof() {
-            return Ok(self.token(TokenType::Eof));
+            return self.token(TokenType::Eof);
         }
         match self.next() {
-            "(" => Ok(self.token(TokenType::LParen)),
-            ")" => Ok(self.token(TokenType::RParen)),
-            "{" => Ok(self.token(TokenType::LBrace)),
-            "}" => Ok(self.token(TokenType::RBrace)),
-            ";" => Ok(self.token(TokenType::Semicolon)),
-            "," => Ok(self.token(TokenType::Comma)),
-            "." => Ok(self.token(TokenType::Dot)),
-            "-" => Ok(self.token(TokenType::Minus)),
-            "+" => Ok(self.token(TokenType::Plus)),
-            "/" => Ok(self.token(TokenType::Slash)),
-            "*" => Ok(self.token(TokenType::Star)),
-            "!" => Ok(if self.take("=") {
-                self.token(TokenType::BangEqual)
-            } else {
-                self.token(TokenType::Bang)
-            }),
-            "=" => Ok(if self.take("=") {
-                self.token(TokenType::EqualEqual)
-            } else {
-                self.token(TokenType::Equal)
-            }),
-            "<" => Ok(if self.take("=") {
-                self.token(TokenType::LessEqual)
-            } else {
-                self.token(TokenType::Less)
-            }),
-            ">" => Ok(if self.take("=") {
-                self.token(TokenType::GreaterEqual)
-            } else {
-                self.token(TokenType::Greater)
-            }),
+            "(" => self.token(TokenType::LParen),
+            ")" => self.token(TokenType::RParen),
+            "{" => self.token(TokenType::LBrace),
+            "}" => self.token(TokenType::RBrace),
+            ";" => self.token(TokenType::Semicolon),
+            "," => self.token(TokenType::Comma),
+            "." => self.token(TokenType::Dot),
+            "-" => self.token(TokenType::Minus),
+            "+" => self.token(TokenType::Plus),
+            "/" => self.token(TokenType::Slash),
+            "*" => self.token(TokenType::Star),
+            "!" => {
+                if self.take("=") {
+                    self.token(TokenType::BangEqual)
+                } else {
+                    self.token(TokenType::Bang)
+                }
+            }
+            "=" => {
+                if self.take("=") {
+                    self.token(TokenType::EqualEqual)
+                } else {
+                    self.token(TokenType::Equal)
+                }
+            }
+            "<" => {
+                if self.take("=") {
+                    self.token(TokenType::LessEqual)
+                } else {
+                    self.token(TokenType::Less)
+                }
+            }
+            ">" => {
+                if self.take("=") {
+                    self.token(TokenType::GreaterEqual)
+                } else {
+                    self.token(TokenType::Greater)
+                }
+            }
             "\"" => self.string(),
-            n if is_digit(n) => Ok(self.number()),
-            c if is_alpha(c) => Ok(self.ident()),
-            _ => Err(Error::compile(
-                self.line,
-                "Unexpected character.".to_string(),
-            )),
+            n if is_digit(n) => self.number(),
+            c if is_alpha(c) => self.ident(),
+            _ => self.token_err("Unexpected character."),
         }
     }
 
@@ -148,10 +153,10 @@ impl<'a> Scanner<'a> {
                 self.next();
             }
         }
-        self.token(TokenType::Num)
+        self.token(TokenType::Number)
     }
 
-    fn string(&mut self) -> Result<Token> {
+    fn string(&mut self) -> Token {
         while self.peek() != "\"" && !self.eof() {
             if self.peek() == "\n" {
                 self.line += 1;
@@ -160,19 +165,24 @@ impl<'a> Scanner<'a> {
         }
 
         if self.eof() {
-            return Err(Error::compile(
-                self.line,
-                "Unterminated string.".to_string(),
-            ));
+            return self.token_err("Unterminated string.");
         }
         self.next();
-        Ok(self.token(TokenType::Str))
+        self.token(TokenType::String)
     }
 
     fn token(&self, typ: TokenType) -> Token {
         Token {
             typ,
             lexeme: &self.src[self.start..self.current],
+            line: self.line,
+        }
+    }
+
+    fn token_err(&self, msg: &'static str) -> Token {
+        Token {
+            typ: TokenType::Error,
+            lexeme: msg,
             line: self.line,
         }
     }
@@ -245,7 +255,7 @@ impl<'a> Scanner<'a> {
 /// Lox token. One difference of the implementation of glox is that we don't
 /// eagerly evaluate the value of a literal.
 #[derive(Debug)]
-pub struct Token<'a> {
+struct Token<'a> {
     typ: TokenType,
     lexeme: &'a str,
     line: usize,
@@ -253,7 +263,7 @@ pub struct Token<'a> {
 
 #[derive(Debug, PartialEq, Eq)]
 /// Lox token types
-pub enum TokenType {
+enum TokenType {
     /// Single character '('
     LParen,
     /// Single character ')'
@@ -295,9 +305,9 @@ pub enum TokenType {
     /// Named entity
     Ident,
     /// String literal
-    Str,
+    String,
     /// Number literal
-    Num,
+    Number,
     /// Keyword 'and'
     And,
     /// Keyword 'class'
@@ -332,6 +342,8 @@ pub enum TokenType {
     While,
     /// Special token for end of file
     Eof,
+    /// Special token for reporting error
+    Error,
 }
 
 fn is_digit(s: &str) -> bool {
