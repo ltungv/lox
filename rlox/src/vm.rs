@@ -1,4 +1,4 @@
-use crate::{BinaryOp, Chunk, OpCode, Result, UnaryOp, Value, compile, disassemble_instruction};
+use crate::{compile, disassemble_instruction, BinaryOp, Chunk, OpCode, Result, UnaryOp, Value};
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug, Default)]

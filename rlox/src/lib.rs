@@ -4,12 +4,16 @@
 
 mod chunk;
 mod compile;
+mod scan;
+mod token;
 mod vm;
 
 use std::fmt;
 
 pub use chunk::*;
 pub use compile::*;
+pub use scan::*;
+pub use token::*;
 pub use vm::*;
 
 /// Result type for the interpreter
