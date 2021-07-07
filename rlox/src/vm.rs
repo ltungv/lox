@@ -1,4 +1,8 @@
-use crate::{compile, disassemble_instruction, BinaryOp, Chunk, OpCode, Result, UnaryOp, Value};
+use crate::{compile, disassemble_instruction, BinaryOp, Chunk, OpCode, UnaryOp, Value};
+
+/// Virtual machine errors
+#[derive(Debug)]
+pub enum RuntimeError {}
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug, Default)]
@@ -9,14 +13,8 @@ pub struct VM<'a> {
 }
 
 impl<'a> VM<'a> {
-    /// Load and run the virtual machine on the given chunk
-    pub fn interpret(&mut self, src: &str) -> Result<()> {
-        compile(src)?;
-        Ok(())
-    }
-
     /// Run the virtual machine with it currently given chunk.
-    fn run(&mut self) -> Result<()> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
         let chunk = match self.chunk {
             Some(c) => c,
             None => return Ok(()),

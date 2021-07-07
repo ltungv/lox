@@ -1,10 +1,11 @@
-use rlox::Error;
 use std::io::Write;
 use std::{
     env,
     io::{self, BufRead, BufReader},
     process,
 };
+
+use rlox::interpret;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -38,7 +39,7 @@ fn run_repl() {
                 if n == 0 {
                     break;
                 }
-                vm.interpret(&line).ok();
+                interpret(&line);
             }
         }
     }
@@ -54,9 +55,5 @@ fn run_file(path: &str) {
     };
 
     let mut vm = rlox::VM::default();
-    match vm.interpret(&src) {
-        Ok(()) => {}
-        Err(Error::Runtime(_)) => process::exit(70),
-        Err(Error::Compile(_)) => process::exit(65),
-    }
+    interpret(&src);
 }
