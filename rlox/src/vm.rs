@@ -13,6 +13,11 @@ pub struct VM<'a> {
 }
 
 impl<'a> VM<'a> {
+    /// Load and run the virtual machine on the given chunk
+    pub fn interpret(&mut self, src: &str) {
+        compile(src);
+    }
+
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self) -> Result<(), RuntimeError> {
         let chunk = match self.chunk {

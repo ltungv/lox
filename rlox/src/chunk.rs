@@ -1,41 +1,27 @@
 //! This module deals with chunks of bytecodes.
 
-use std::collections::HashMap;
 use std::fmt;
+
+use crate::Position;
 
 /// Chunk is a sequence of bytecode.
 #[derive(Default, Debug)]
 pub struct Chunk {
     instructions: Vec<OpCode>,
     constants: Vec<Value>,
-    line_run_length: HashMap<usize, usize>,
+    positions: Vec<Position>,
 }
 
 impl Chunk {
     /// Add a new instruction to the chunk.
-    pub fn write_instruction(&mut self, code: OpCode, line: usize) {
+    pub fn write_instruction(&mut self, code: OpCode, pos: Position) {
         self.instructions.push(code);
-        *self.line_run_length.entry(line).or_default() += 1;
+        self.positions.push(pos);
     }
 
     /// Read the instruction at the index.
     pub fn read_instruction(&self, idx: usize) -> &OpCode {
         &self.instructions[idx]
-    }
-
-    /// Determine the line where the instruction at the given index occured.
-    pub fn instruction_line(&self, code_idx: usize) -> usize {
-        let mut lines: Vec<_> = self.line_run_length.keys().copied().collect();
-        lines.sort_unstable();
-
-        let mut offset = 0;
-        for line in &lines {
-            offset += self.line_run_length[line];
-            if code_idx < offset {
-                return *line;
-            }
-        }
-        return lines.last().copied().unwrap_or(0);
     }
 
     /// Add a constant value to the chunk and return it position in the Vec
@@ -114,10 +100,10 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
 #[cfg(debug_assertions)]
 pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
     print!("{:04} ", idx);
-    if idx > 0 && chunk.instruction_line(idx) == chunk.instruction_line(idx - 1) {
+    if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
         print!("   | ");
     } else {
-        print!("{:4} ", chunk.instruction_line(idx));
+        print!("{:4} ", chunk.positions[idx].line);
     }
 
     match chunk.instructions[idx] {

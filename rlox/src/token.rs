@@ -1,6 +1,6 @@
 /// Lox token. One difference of the implementation of glox is that we don't
 /// eagerly evaluate the value of a literal.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     /// Lox token type
     pub typ: Type,
@@ -17,7 +17,7 @@ pub struct Token {
 }
 
 /// Lox token types
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     /// Single character '('
     LParen,
@@ -95,6 +95,8 @@ pub enum Type {
     Var,
     /// Keyword 'while'
     While,
+    /// Special token for indicatin end of file
+    Eof,
 }
 
 /// Position of the token in source

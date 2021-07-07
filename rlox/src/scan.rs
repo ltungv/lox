@@ -1,4 +1,4 @@
-use std::str::Chars;
+use std::{fmt, str::Chars};
 
 use itertools::{self, MultiPeek};
 
@@ -6,15 +6,6 @@ use crate::{
     token::{self, Token},
     Position,
 };
-
-/// Error while scanning Lox tokens
-#[derive(Debug)]
-pub enum ScanError {
-    /// A string literal is unterminated
-    UnterminatedString(Position),
-    /// Invalid character
-    UnexpectedCharacter(Position, char),
-}
 
 /// Scanner reads characters from the source code and groups them in to
 /// a sequence of tokens.
@@ -209,6 +200,58 @@ impl<'a> Scanner<'a> {
             typ,
             lexeme: self.lexeme.drain(..).collect(),
             pos: self.pos,
+        }
+    }
+}
+
+impl<'a> IntoIterator for Scanner<'a> {
+    type Item = Result<Token, ScanError>;
+
+    type IntoIter = Iter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Iter { scanner: self }
+    }
+}
+
+/// An interator for the tokens scanner
+#[derive(Debug)]
+pub struct Iter<'a> {
+    scanner: Scanner<'a>,
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = Result<Token, ScanError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.scanner.scan().transpose()
+    }
+}
+
+/// Error while scanning Lox source code
+#[derive(Debug)]
+pub enum ScanError {
+    /// A string literal is unterminated
+    UnterminatedString(Position),
+    /// Invalid character
+    UnexpectedCharacter(Position, char),
+}
+
+impl std::error::Error for ScanError {}
+
+impl fmt::Display for ScanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnterminatedString(pos) => write!(
+                f,
+                "[line {}:{}] Error: Unterminated string.",
+                pos.line, pos.column
+            ),
+            Self::UnexpectedCharacter(pos, c) => write!(
+                f,
+                "[line {}:{}] Error: Unexpected character '{}'.",
+                pos.line, pos.column, c
+            ),
         }
     }
 }

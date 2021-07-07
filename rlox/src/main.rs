@@ -5,8 +5,6 @@ use std::{
     process,
 };
 
-use rlox::interpret;
-
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() {
@@ -39,7 +37,7 @@ fn run_repl() {
                 if n == 0 {
                     break;
                 }
-                interpret(&line);
+                vm.interpret(&line);
             }
         }
     }
@@ -55,5 +53,5 @@ fn run_file(path: &str) {
     };
 
     let mut vm = rlox::VM::default();
-    interpret(&src);
+    vm.interpret(&src);
 }
