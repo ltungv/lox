@@ -3,8 +3,12 @@ use crate::{
     Position,
 };
 
+/// Error while scanning Lox tokens
+#[derive(Debug)]
 pub enum ScanError {
+    /// A string literal is unterminated
     UnterminatedString(Position),
+    /// Invalid character
     UnexpectedCharacter(Position, char),
 }
 
