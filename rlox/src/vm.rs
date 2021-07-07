@@ -24,7 +24,7 @@ impl<'a> VM<'a> {
 
         loop {
             if cfg!(debug_assertions) {
-                self.print_stack_trace();
+                print_stack_trace(&self.stack);
                 disassemble_instruction(chunk, self.ip);
             }
 
@@ -65,14 +65,14 @@ impl<'a> VM<'a> {
             }
         }
     }
+}
 
-    #[cfg(debug_assertions)]
-    fn print_stack_trace(&self) {
-        // print stack trace
-        print!("          ");
-        for val in &self.stack {
-            print!("[ {} ]", val);
-        }
-        println!();
+#[cfg(debug_assertions)]
+fn print_stack_trace(stack: &[Value]) {
+    // print stack trace
+    print!("          ");
+    for val in stack {
+        print!("[ {} ]", val);
     }
+    println!();
 }

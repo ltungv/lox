@@ -1,6 +1,7 @@
 //! Infrastructure for a bytecode virtual machine for the Lox programming language.
 
-#![warn(missing_docs, missing_debug_implementations)]
+#![warn(missing_debug_implementations)]
+#![deny(missing_docs)]
 
 mod chunk;
 mod compile;

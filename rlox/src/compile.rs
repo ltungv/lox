@@ -1,4 +1,4 @@
-use crate::{token, Result, Scanner};
+use crate::{scan::Scanner, token, Result};
 
 /// Compile the given source code in to bytecodes that can be read
 /// by the virtual machine
@@ -7,11 +7,11 @@ pub fn compile(src: &str) -> Result<()> {
     let mut line = None;
     loop {
         let token = s.scan();
-        if line.is_none() || token.line != line.unwrap() {
-            print!("{:4} ", token.line);
-            line = Some(token.line);
+        if line.is_none() || token.pos.line != line.unwrap() {
+            print!("{:4},{:<4}   ", token.pos.line, token.pos.column);
+            line = Some(token.pos.line);
         } else {
-            print!("   | ");
+            print!("     {:<4} | ", token.pos.column);
         }
         println!("{:?} '{:}'", token.typ, token.lexeme);
 
