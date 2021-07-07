@@ -97,8 +97,6 @@ pub enum Type {
     While,
     /// Special token for end of file
     Eof,
-    /// Special token for reporting error
-    Error,
 }
 
 /// Position of the token in source

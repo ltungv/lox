@@ -3,6 +3,11 @@ use crate::{
     Position,
 };
 
+pub enum ScanError {
+    UnterminatedString(Position),
+    UnexpectedCharacter(Position, char),
+}
+
 /// Scanner reads characters from the source code and groups them in to
 /// a sequence of tokens.
 #[derive(Debug)]
@@ -26,13 +31,13 @@ impl Scanner {
     }
 
     /// Consume and return the next token from source.
-    pub fn scan(&mut self) -> Token {
+    pub fn scan(&mut self) -> Result<Token, ScanError> {
         self.skip_whitespace();
         self.start = self.current;
         if self.is_source_end() {
-            return self.token(token::Type::Eof);
+            return Ok(self.token(token::Type::Eof));
         }
-        match self.advance() {
+        Ok(match self.advance() {
             '(' => self.token(token::Type::LParen),
             ')' => self.token(token::Type::RParen),
             '{' => self.token(token::Type::LBrace),
@@ -72,11 +77,13 @@ impl Scanner {
                     self.token(token::Type::Greater)
                 }
             }
-            '"' => self.string(),
+            '"' => self.string()?,
             n if is_digit(n) => self.number(),
             c if is_alpha(c) => self.identity(),
-            _ => self.token_err("Unexpected character."),
-        }
+            c => {
+                return Err(ScanError::UnexpectedCharacter(self.pos, c));
+            }
+        })
     }
 
     fn identity(&mut self) -> Token {
@@ -146,30 +153,22 @@ impl Scanner {
         self.token(token::Type::Number)
     }
 
-    fn string(&mut self) -> Token {
+    fn string(&mut self) -> Result<Token, ScanError> {
         while self.peek() != '"' && !self.is_source_end() {
             self.advance();
         }
 
         if self.is_source_end() {
-            return self.token_err("Unterminated string.");
+            return Err(ScanError::UnterminatedString(self.pos));
         }
         self.advance();
-        self.token(token::Type::String)
+        Ok(self.token(token::Type::String))
     }
 
     fn token(&self, typ: token::Type) -> Token {
         Token {
             typ,
             lexeme: self.src[self.start..self.current].iter().cloned().collect(),
-            pos: self.pos,
-        }
-    }
-
-    fn token_err(&self, msg: &str) -> Token {
-        Token {
-            typ: token::Type::Error,
-            lexeme: msg.to_string(),
             pos: self.pos,
         }
     }
