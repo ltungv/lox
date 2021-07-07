@@ -5,6 +5,8 @@ use std::{
     process,
 };
 
+use rlox::Error;
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() {
@@ -37,7 +39,15 @@ fn run_repl() {
                 if n == 0 {
                     break;
                 }
-                vm.interpret(&line);
+                match vm.interpret(&line) {
+                    Ok(()) => {}
+                    Err(Error::Runtime(err)) => {
+                        eprintln!("{}", err);
+                    }
+                    Err(Error::Compile(err)) => {
+                        eprintln!("{}", err);
+                    }
+                }
             }
         }
     }
@@ -53,5 +63,15 @@ fn run_file(path: &str) {
     };
 
     let mut vm = rlox::VM::default();
-    vm.interpret(&src);
+    match vm.interpret(&src) {
+        Ok(()) => {}
+        Err(Error::Runtime(err)) => {
+            eprintln!("{}", err);
+            process::exit(70);
+        }
+        Err(Error::Compile(err)) => {
+            eprintln!("{}", err);
+            process::exit(65);
+        }
+    }
 }

@@ -1,34 +1,55 @@
-use crate::{compile, disassemble_instruction, BinaryOp, Chunk, OpCode, UnaryOp, Value};
+use std::fmt;
+
+use crate::{
+    compile, disassemble_chunk, disassemble_instruction, BinaryOp, Chunk, Error, OpCode, Position,
+    UnaryOp, Value,
+};
 
 /// Virtual machine errors
 #[derive(Debug)]
 pub enum RuntimeError {}
 
+impl fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "RuntimeError")
+    }
+}
+
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug, Default)]
-pub struct VM<'a> {
-    chunk: Option<&'a Chunk>,
+pub struct VM {
+    chunk: Option<Chunk>,
     ip: usize,
     stack: Vec<Value>,
 }
 
-impl<'a> VM<'a> {
+impl VM {
     /// Load and run the virtual machine on the given chunk
-    pub fn interpret(&mut self, src: &str) {
-        compile(src);
+    pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
+        let mut chunk = compile(src)?;
+        chunk.write_instruction(OpCode::Return, Position::default());
+
+        self.chunk = Some(chunk);
+        self.ip = 0;
+        self.run()?;
+        Ok(())
     }
 
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self) -> Result<(), RuntimeError> {
         let chunk = match self.chunk {
-            Some(c) => c,
+            Some(ref c) => c,
             None => return Ok(()),
         };
+
+        if cfg!(debug_assertions) {
+            disassemble_chunk(&chunk, "code");
+        }
 
         loop {
             if cfg!(debug_assertions) {
                 print_stack_trace(&self.stack);
-                disassemble_instruction(chunk, self.ip);
+                disassemble_instruction(&chunk, self.ip);
             }
 
             let opcode = chunk.read_instruction(self.ip);
