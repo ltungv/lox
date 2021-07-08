@@ -39,14 +39,8 @@ fn run_repl() {
                 if n == 0 {
                     break;
                 }
-                match vm.interpret(&line) {
-                    Ok(()) => {}
-                    Err(Error::Runtime(err)) => {
-                        eprintln!("{}", err);
-                    }
-                    Err(Error::Compile(err)) => {
-                        eprintln!("{}", err);
-                    }
+                if let Err(Error::Runtime(err)) = vm.interpret(&line) {
+                    eprintln!("{}", err);
                 }
             }
         }
@@ -69,8 +63,7 @@ fn run_file(path: &str) {
             eprintln!("{}", err);
             process::exit(70);
         }
-        Err(Error::Compile(err)) => {
-            eprintln!("{}", err);
+        Err(Error::Compile) => {
             process::exit(65);
         }
     }

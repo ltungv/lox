@@ -26,7 +26,7 @@ pub struct VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let mut chunk = compile(src)?;
+        let mut chunk = compile(src).ok_or(Error::Compile)?;
         chunk.write_instruction(OpCode::Return, Position::default());
 
         self.chunk = Some(chunk);

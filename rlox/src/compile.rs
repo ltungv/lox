@@ -4,47 +4,20 @@ use std::{
     iter::Peekable,
 };
 
-use crate::{
-    scan, token, BinaryOp, Chunk, OpCode, Position, ScanError, Scanner, Token, UnaryOp, Value,
-};
-
-/// Lox compilation error
-#[derive(Debug)]
-pub enum CompileError {
-    /// Error from scanner
-    Scan,
-    /// Error from parser
-    Parse(ParseError),
-}
-impl std::error::Error for CompileError {}
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        match self {
-            Self::Parse(err) => write!(f, "{}", err),
-            _ => Ok(()),
-        }
-    }
-}
-
-impl From<ParseError> for CompileError {
-    fn from(err: ParseError) -> Self {
-        Self::Parse(err)
-    }
-}
+use crate::{scan, token, BinaryOp, Chunk, OpCode, Position, Scanner, Token, UnaryOp, Value};
 
 /// Compile the given source code in to bytecodes that can be read
 /// by the virtual machine
-pub fn compile(src: &str) -> Result<Chunk, CompileError> {
+pub fn compile(src: &str) -> Option<Chunk> {
     let mut chunk = Chunk::default();
     let mut parser = Parser::new(&mut chunk, src);
-    parser.expression()?;
-    if !parser.scan_errors.is_empty() {
-        for err in parser.scan_errors {
-            eprintln!("{}", err);
-        }
-        return Err(CompileError::Scan);
+    if let Err(err) = parser.expression() {
+        eprintln!("{}", err);
+    };
+    if parser.had_error {
+        return None;
     }
-    Ok(chunk)
+    Some(chunk)
 }
 
 /// Error while parsing Lox tokens
@@ -76,7 +49,7 @@ impl fmt::Display for ParseError {
 pub struct Parser<'a> {
     chunk: &'a mut Chunk,
     tokens: Peekable<scan::Iter<'a>>,
-    scan_errors: Vec<ScanError>,
+    had_error: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -85,7 +58,7 @@ impl<'a> Parser<'a> {
         Self {
             chunk,
             tokens: Scanner::new(src).into_iter().peekable(),
-            scan_errors: Vec::new(),
+            had_error: false,
         }
     }
 
@@ -97,6 +70,7 @@ impl<'a> Parser<'a> {
         let tok = self.peek().ok_or(ParseError::UnexpectedEof)?;
         let prefix_rule = Self::get_rule(&tok.typ).prefix;
         if prefix_rule.is_none() {
+            self.had_error = true;
             return Err(ParseError::UnexpectedToken(
                 tok,
                 "Expect expression".to_string(),
@@ -112,6 +86,7 @@ impl<'a> Parser<'a> {
             if let Some(infix_rule) = Self::get_rule(&tok.typ).infix {
                 infix_rule(self)?;
             } else {
+                self.had_error = true;
                 return Err(ParseError::UnexpectedToken(tok, "".to_string()));
             }
         }
@@ -161,20 +136,19 @@ impl<'a> Parser<'a> {
     }
 
     fn advance(&mut self) -> Option<Token> {
-        while let Some(Err(_)) = self.tokens.peek() {
+        while let Some(Err(err)) = self.tokens.peek() {
             // unwrap and unwrap_err is safe because our loop condition ensured that
-            self.scan_errors
-                .push(self.tokens.next().unwrap().unwrap_err());
+            eprintln!("{}", err);
+            self.had_error = true;
         }
         // unwrap is safe since we have skipped all errors
         self.tokens.next().map(Result::unwrap)
     }
 
     fn peek(&mut self) -> Option<Token> {
-        while let Some(Err(_)) = self.tokens.peek() {
-            // unwrap and unwrap_err is safe because our loop condition ensured that
-            self.scan_errors
-                .push(self.tokens.next().unwrap().unwrap_err());
+        while let Some(Err(err)) = self.tokens.peek() {
+            eprintln!("{}", err);
+            self.had_error = true;
         }
         // unwrap is safe since we have skipped all errors
         self.tokens.peek().map(|peeked| match peeked {
@@ -185,9 +159,13 @@ impl<'a> Parser<'a> {
 
     fn consume(&mut self, typ: token::Type, msg: &str) -> Result<(), ParseError> {
         match self.tokens.peek() {
-            None => Err(ParseError::UnexpectedEof),
+            None => {
+                self.had_error = true;
+                Err(ParseError::UnexpectedEof)
+            }
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
             Some(Ok(tok)) if tok.typ != typ => {
+                self.had_error = true;
                 Err(ParseError::UnexpectedToken(tok.clone(), msg.to_string()))
             }
             _ => {

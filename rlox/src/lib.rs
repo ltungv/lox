@@ -23,7 +23,7 @@ pub enum Error {
     /// A runtime error happened
     Runtime(RuntimeError),
     /// A compilation error happened
-    Compile(CompileError),
+    Compile,
 }
 
 impl std::error::Error for Error {}
@@ -32,16 +32,11 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Self::Runtime(err) => write!(f, "{}", err),
-            Self::Compile(err) => write!(f, "{}", err),
+            Self::Compile => write!(f, "Compilation errors."),
         }
     }
 }
 
-impl From<CompileError> for Error {
-    fn from(err: CompileError) -> Self {
-        Self::Compile(err)
-    }
-}
 impl From<RuntimeError> for Error {
     fn from(err: RuntimeError) -> Self {
         Self::Runtime(err)
