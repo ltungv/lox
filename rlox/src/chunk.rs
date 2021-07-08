@@ -106,7 +106,7 @@ pub enum OpCode {
 }
 
 /// This represents a Lox type and its data at.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Value {
     /// A nothing value in Lox
     Nil,
@@ -114,14 +114,23 @@ pub enum Value {
     Bool(bool),
     /// A number value in Lox
     Number(f64),
+    /// A heap allocated string
+    ///
+    /// # Notes
+    ///
+    /// To improve memory usage, we should separated string into 2 types, one that owns its
+    /// character array and one that is "constant" such that it points to the original source
+    /// or some non-freeable location.
+    String(String),
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match *self {
+        match self {
             Self::Nil => write!(f, "nil"),
             Self::Bool(b) => write!(f, "{}", b),
             Self::Number(n) => write!(f, "{}", n),
+            Self::String(s) => write!(f, "{}", s),
         }
     }
 }
@@ -142,6 +151,11 @@ impl Value {
         matches!(self, Self::Number(_))
     }
 
+    /// Return true if this is a heap-allocated Lox value
+    pub fn is_string(&self) -> bool {
+        matches!(self, Self::String(_))
+    }
+
     /// Return true if the value is `nil` or `false`. Otherwise, return false.
     pub fn is_falsey(&self) -> bool {
         match self {
@@ -158,6 +172,7 @@ impl Value {
             (Self::Nil, Self::Nil) => true,
             (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
             (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
+            (Self::String(s1), Self::String(s2)) => s1 == s2,
             _ => false,
         }
     }
@@ -197,6 +212,7 @@ impl Value {
             (Self::Number(v1), Self::Number(v2)) => {
                 *v1 += v2;
             }
+            (Self::String(v1), Self::String(v2)) => v1.push_str(&v2),
             _ => panic!("Check values' type before applying the operation."),
         }
     }

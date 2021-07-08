@@ -14,6 +14,9 @@ pub enum RuntimeError {
     StackOverflow,
     /// Pop on an empty stack
     StackUnderflow,
+    /// Wrong arguments given to binary add operators that only accept two numbers
+    /// or two strings
+    InvalidAddOperands(Position),
     /// Wrong arguments given to binary operators that only accept numbers
     BinaryNumberOperands(Position),
     /// Wrong arguments given to unary operators that only accept a numbers
@@ -28,6 +31,13 @@ impl fmt::Display for RuntimeError {
             }
             Self::StackUnderflow => {
                 writeln!(f, "Virtual machine's stack underflows.")
+            }
+            Self::InvalidAddOperands(p) => {
+                writeln!(
+                    f,
+                    "Operands must be two numbers or two strings.\n{} in script.",
+                    p
+                )
             }
             Self::BinaryNumberOperands(p) => {
                 writeln!(f, "Operands must be numbers.\n{} in script.", p)
@@ -84,7 +94,7 @@ impl VM {
             match opcode {
                 OpCode::Constant(ref idx) => {
                     let val = chunk.read_const(*idx);
-                    self.push(*val)?;
+                    self.push(val.clone())?;
                 }
                 OpCode::Nil => self.push(Value::Nil)?,
                 OpCode::True => self.push(Value::Bool(true))?,
@@ -146,8 +156,8 @@ impl VM {
                     self.apply_binary_op(
                         pos,
                         Value::add,
-                        Value::is_number,
-                        RuntimeError::BinaryNumberOperands,
+                        |v| v.is_number() || v.is_string(),
+                        RuntimeError::InvalidAddOperands,
                     )?;
                 }
                 OpCode::Subtract => {

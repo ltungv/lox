@@ -99,7 +99,7 @@ impl<'a> Parser<'a> {
             token::Type::BangEqual => {
                 self.emit(OpCode::Equal, operator.pos);
                 self.emit(OpCode::Not, operator.pos);
-            },
+            }
             token::Type::EqualEqual => self.emit(OpCode::Equal, operator.pos),
             token::Type::Greater => self.emit(OpCode::Greater, operator.pos),
             token::Type::GreaterEqual => {
@@ -145,6 +145,16 @@ impl<'a> Parser<'a> {
             token::Type::True => self.emit(OpCode::True, tok.pos),
             _ => unreachable!("Rule table is wrong."),
         }
+        Ok(())
+    }
+
+    fn string(&mut self) -> Result<(), ParseError> {
+        let tok = self.advance()?;
+        assert_eq!(tok.typ, token::Type::String);
+
+        let value = tok.lexeme[1..tok.lexeme.len() - 1].to_string();
+        let constant = self.chunk.write_const(Value::String(value));
+        self.emit(OpCode::Constant(constant), tok.pos);
         Ok(())
     }
 
@@ -225,7 +235,7 @@ impl<'a> Parser<'a> {
             token::Type::Less => (Precedence::Comparison, None, Some(Self::binary)),
             token::Type::LessEqual => (Precedence::Comparison, None, Some(Self::binary)),
             token::Type::Ident => (Precedence::None, None, None),
-            token::Type::String => (Precedence::None, None, None),
+            token::Type::String => (Precedence::None, Some(Self::string), None),
             token::Type::Number => (Precedence::None, Some(Self::number), None),
             token::Type::And => (Precedence::None, None, None),
             token::Type::Class => (Precedence::None, None, None),
