@@ -4,9 +4,14 @@ use crate::{
     compile, disassemble_chunk, disassemble_instruction, Chunk, Error, OpCode, Position, Value,
 };
 
+/// We're limiting the stack's size to be in specification with clox
+pub const MAX_STACK_SIZE: usize = 256;
+
 /// Virtual machine errors
 #[derive(Debug)]
 pub enum RuntimeError {
+    /// Pus on an full stack
+    StackOverflow,
     /// Pop on an empty stack
     StackUnderflow,
     /// Wrong arguments given to binary operators that only accept numbers
@@ -18,8 +23,11 @@ impl std::error::Error for RuntimeError {}
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match *self {
+            Self::StackOverflow => {
+                writeln!(f, "Virtual machine's stack overflows.")
+            }
             Self::StackUnderflow => {
-                writeln!(f, "Virtual machine's stack underflow.")
+                writeln!(f, "Virtual machine's stack underflows.")
             }
             Self::BinaryNumberOperands(p) => {
                 writeln!(f, "Operands must be numbers.\n{} in script.", p)
@@ -32,10 +40,19 @@ impl fmt::Display for RuntimeError {
 }
 
 /// A bytecode virtual machine for the Lox programming language
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct VM {
     ip: usize,
     stack: Vec<Value>,
+}
+
+impl Default for VM {
+    fn default() -> Self {
+        Self {
+            ip: 0,
+            stack: Vec::with_capacity(MAX_STACK_SIZE),
+        }
+    }
 }
 
 impl VM {
@@ -47,21 +64,6 @@ impl VM {
         self.ip = 0;
         self.run(&chunk)?;
         Ok(())
-    }
-
-    fn peek(&self, steps: usize) -> Result<&Value, RuntimeError> {
-        self.stack
-            .get(self.stack.len() - 1 - steps)
-            .ok_or(RuntimeError::StackUnderflow)
-    }
-
-    fn peek_mut(&mut self, steps: usize) -> Result<&mut Value, RuntimeError> {
-        let idx = self.stack.len() - 1 - steps;
-        self.stack.get_mut(idx).ok_or(RuntimeError::StackUnderflow)
-    }
-
-    fn pop(&mut self) -> Result<Value, RuntimeError> {
-        self.stack.pop().ok_or(RuntimeError::StackUnderflow)
     }
 
     /// Run the virtual machine with it currently given chunk.
@@ -82,8 +84,11 @@ impl VM {
             match opcode {
                 OpCode::Constant(ref idx) => {
                     let val = chunk.read_const(*idx);
-                    self.stack.push(val.clone());
+                    self.push(*val)?;
                 }
+                OpCode::Nil => self.push(Value::Nil)?,
+                OpCode::True => self.push(Value::Bool(true))?,
+                OpCode::False => self.push(Value::Bool(false))?,
                 OpCode::Return => {
                     let v = self.pop()?;
                     println!("{}", v);
@@ -130,6 +135,29 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn peek(&self, steps: usize) -> Result<&Value, RuntimeError> {
+        self.stack
+            .get(self.stack.len() - 1 - steps)
+            .ok_or(RuntimeError::StackUnderflow)
+    }
+
+    fn peek_mut(&mut self, steps: usize) -> Result<&mut Value, RuntimeError> {
+        let idx = self.stack.len() - 1 - steps;
+        self.stack.get_mut(idx).ok_or(RuntimeError::StackUnderflow)
+    }
+
+    fn push(&mut self, val: Value) -> Result<(), RuntimeError> {
+        if self.stack.len() == MAX_STACK_SIZE {
+            return Err(RuntimeError::StackOverflow);
+        }
+        self.stack.push(val);
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Result<Value, RuntimeError> {
+        self.stack.pop().ok_or(RuntimeError::StackUnderflow)
     }
 }
 

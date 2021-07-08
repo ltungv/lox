@@ -58,10 +58,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expression(&mut self) -> Result<(), ParseError> {
-        self.parse_precedence(Precedence::Assignment)
-    }
-
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
         let tok = self.peek().ok_or(ParseError::UnexpectedEof)?;
         match Self::get_rule(&tok.typ).prefix {
@@ -90,8 +86,12 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn expression(&mut self) -> Result<(), ParseError> {
+        self.parse_precedence(Precedence::Assignment)
+    }
+
     fn binary(&mut self) -> Result<(), ParseError> {
-        let operator = self.advance().ok_or(ParseError::UnexpectedEof)?;
+        let operator = self.advance()?;
         let rule = Self::get_rule(&operator.typ);
         self.parse_precedence(rule.precedence.next())?;
 
@@ -100,17 +100,17 @@ impl<'a> Parser<'a> {
             token::Type::Minus => self.emit(OpCode::Subtract, operator.pos),
             token::Type::Star => self.emit(OpCode::Multiply, operator.pos),
             token::Type::Slash => self.emit(OpCode::Divide, operator.pos),
-            _ => unreachable!(),
+            _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
 
     fn unary(&mut self) -> Result<(), ParseError> {
-        let operator = self.advance().ok_or(ParseError::UnexpectedEof)?;
+        let operator = self.advance()?;
         self.parse_precedence(Precedence::Unary)?;
         match operator.typ {
             token::Type::Minus => self.emit(OpCode::Negate, operator.pos),
-            _ => unreachable!(),
+            _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
@@ -121,8 +121,19 @@ impl<'a> Parser<'a> {
         self.consume(token::Type::RParen, "Expect ')' after expression")
     }
 
+    fn literal(&mut self) -> Result<(), ParseError> {
+        let tok = self.advance()?;
+        match tok.typ {
+            token::Type::False => self.emit(OpCode::False, tok.pos),
+            token::Type::Nil => self.emit(OpCode::Nil, tok.pos),
+            token::Type::True => self.emit(OpCode::True, tok.pos),
+            _ => unreachable!("Rule table is wrong."),
+        }
+        Ok(())
+    }
+
     fn number(&mut self) -> Result<(), ParseError> {
-        let tok = self.advance().ok_or(ParseError::UnexpectedEof)?;
+        let tok = self.advance()?;
         assert_eq!(tok.typ, token::Type::Number);
 
         let value = tok.lexeme.parse().unwrap();
@@ -131,12 +142,15 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn advance(&mut self) -> Option<Token> {
+    fn advance(&mut self) -> Result<Token, ParseError> {
         while let Some(Err(err)) = self.tokens.peek() {
             eprintln!("{}", err);
             self.had_error = true;
         }
-        self.tokens.next().map(Result::unwrap)
+        self.tokens
+            .next()
+            .map(Result::unwrap)
+            .ok_or(ParseError::UnexpectedEof)
     }
 
     fn peek(&mut self) -> Option<Token> {
@@ -152,19 +166,20 @@ impl<'a> Parser<'a> {
 
     fn consume(&mut self, typ: token::Type, msg: &str) -> Result<(), ParseError> {
         match self.tokens.peek() {
+            Some(Ok(tok)) => {
+                if tok.typ == typ {
+                    self.advance()?;
+                    Ok(())
+                } else {
+                    self.had_error = true;
+                    Err(ParseError::UnexpectedToken(tok.clone(), msg.to_string()))
+                }
+            }
             None => {
                 self.had_error = true;
                 Err(ParseError::UnexpectedEof)
             }
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
-            Some(Ok(tok)) if tok.typ != typ => {
-                self.had_error = true;
-                Err(ParseError::UnexpectedToken(tok.clone(), msg.to_string()))
-            }
-            _ => {
-                self.advance();
-                Ok(())
-            }
         }
     }
 
@@ -199,17 +214,17 @@ impl<'a> Parser<'a> {
             token::Type::And => (Precedence::None, None, None),
             token::Type::Class => (Precedence::None, None, None),
             token::Type::Else => (Precedence::None, None, None),
-            token::Type::False => (Precedence::None, None, None),
+            token::Type::False => (Precedence::None, Some(Self::literal), None),
             token::Type::For => (Precedence::None, None, None),
             token::Type::Fun => (Precedence::None, None, None),
             token::Type::If => (Precedence::None, None, None),
-            token::Type::Nil => (Precedence::None, None, None),
+            token::Type::Nil => (Precedence::None, Some(Self::literal), None),
             token::Type::Or => (Precedence::None, None, None),
             token::Type::Print => (Precedence::None, None, None),
             token::Type::Return => (Precedence::None, None, None),
             token::Type::Super => (Precedence::None, None, None),
             token::Type::This => (Precedence::None, None, None),
-            token::Type::True => (Precedence::None, None, None),
+            token::Type::True => (Precedence::None, Some(Self::literal), None),
             token::Type::Var => (Precedence::None, None, None),
             token::Type::While => (Precedence::None, None, None),
             token::Type::Eof => (Precedence::None, None, None),

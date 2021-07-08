@@ -54,11 +54,17 @@ impl Chunk {
 }
 
 /// OpCode is a number that specifies the type of the instruction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum OpCode {
     /// Load a constant
     Constant(u8),
+    /// Load a `nil` value
+    Nil,
+    /// Load a `true` value
+    True,
+    /// Load a `false` value
+    False,
     /// Return from the current function.
     Return,
     /// Negate a single number operand
@@ -76,7 +82,7 @@ pub enum OpCode {
 }
 
 /// This represents a Lox type and its data at.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Value {
     /// A nothing value in Lox
     Nil,
@@ -207,6 +213,9 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::Constant(ref idx) => {
             println!("{:-16} {:4} {}", "OP_CONSTANT", idx, chunk.read_const(*idx))
         }
+        OpCode::Nil => println!("OP_NIL"),
+        OpCode::True => println!("OP_TRUE"),
+        OpCode::False => println!("OP_FALSE"),
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Negate => println!("OP_NEGATE"),
         OpCode::Add => println!("OP_ADD"),

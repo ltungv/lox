@@ -19,7 +19,7 @@ pub struct Token {
 }
 
 /// Lox token types
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     /// Single character '('
     LParen,
