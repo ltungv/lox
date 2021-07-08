@@ -4,7 +4,24 @@ use std::fmt;
 
 use crate::Position;
 
-/// Chunk is a sequence of bytecode.
+/// Chunk is a sequence of instructions and data that will be written to by the compiler
+/// and later run by the virtual-machine.
+///
+/// # Examples
+///
+/// ```
+/// use rlox::{Chunk, OpCode, Position, Value};
+///
+/// let mut chunk = Chunk::default();
+/// let const_id = chunk.write_const(Value::Number(1.0));
+/// assert!(matches!(chunk.read_const(const_id), &Value::Number(1.0)));
+///
+/// chunk.write_instruction(OpCode::Constant(const_id), Position::default());
+/// assert!(matches!(
+///     chunk.read_instruction(0),
+///     (&OpCode::Constant(cost_id), &Position { line: 1, column : 1 }),
+/// ));
+/// ```
 #[derive(Default, Debug)]
 pub struct Chunk {
     instructions: Vec<OpCode>,
@@ -20,8 +37,8 @@ impl Chunk {
     }
 
     /// Read the instruction at the index.
-    pub fn read_instruction(&self, idx: usize) -> &OpCode {
-        &self.instructions[idx]
+    pub fn read_instruction(&self, idx: usize) -> (&OpCode, &Position) {
+        (&self.instructions[idx], &self.positions[idx])
     }
 
     /// Add a constant value to the chunk and return it position in the Vec
@@ -44,37 +61,27 @@ pub enum OpCode {
     Constant(u8),
     /// Return from the current function.
     Return,
-    /// Operator that has one operand
-    Unary(UnaryOp),
-    /// Operator that has two operands
-    Binary(BinaryOp),
-}
-
-/// All operators that have one operand
-#[derive(Debug, Clone)]
-#[repr(u8)]
-pub enum UnaryOp {
-    /// Negate the single operand
+    /// Negate a single number operand
     Negate,
-}
-
-/// All operators that have two operands
-#[derive(Debug, Clone)]
-#[repr(u8)]
-pub enum BinaryOp {
-    /// Add two operands
+    /// Add two number operands
     Add,
-    /// Subtract the first operand with the second operand
+    /// Subtract the first operand with the second operand, both operands
+    /// must be numbers
     Subtract,
-    /// Multiply two operands
+    /// Multiply two number operands
     Multiply,
-    /// Divide the first operand with the second operand
+    /// Divide the first operand with the second operand, both operands
+    /// must be numbers
     Divide,
 }
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
 pub enum Value {
+    /// A nothing value in Lox
+    Nil,
+    /// A boolean value in Lox
+    Bool(bool),
     /// A number value in Lox
     Number(f64),
 }
@@ -82,7 +89,97 @@ pub enum Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match *self {
+            Self::Nil => write!(f, "nil"),
+            Self::Bool(b) => write!(f, "{}", b),
             Self::Number(n) => write!(f, "{}", n),
+        }
+    }
+}
+
+impl Value {
+    /// Return true if this is a Lox nil value
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Self::Nil)
+    }
+
+    /// Return true if this is a Lox boolean value
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Self::Bool(_))
+    }
+
+    /// Return true if this is a Lox number value
+    pub fn is_number(&self) -> bool {
+        matches!(self, Self::Number(_))
+    }
+
+    /// Add two values.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers or both strings,
+    /// a runtime error is return
+    pub fn add(&mut self, other: &Value) {
+        match (self, other) {
+            (Self::Number(v1), Self::Number(v2)) => {
+                *v1 += v2;
+            }
+            _ => panic!("Check values' type before applying the operation."),
+        }
+    }
+
+    /// Subtract two values.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers, a runtime error is return
+    pub fn subtract(&mut self, other: &Value) {
+        match (self, other) {
+            (Self::Number(v1), Self::Number(v2)) => {
+                *v1 -= v2;
+            }
+            _ => panic!("Check values' type before applying the operation."),
+        }
+    }
+
+    /// Multiply two values.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers, a runtime error is return
+    pub fn multiply(&mut self, other: &Value) {
+        match (self, other) {
+            (Self::Number(v1), Self::Number(v2)) => {
+                *v1 *= v2;
+            }
+            _ => panic!("Check values' type before applying the operation."),
+        }
+    }
+
+    /// Divide two values.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers, a runtime error is return
+    pub fn divide(&mut self, other: &Value) {
+        match (self, other) {
+            (Self::Number(v1), Self::Number(v2)) => {
+                *v1 /= v2;
+            }
+            _ => panic!("Check values' type before applying the operation."),
+        }
+    }
+
+    /// Negate the current value
+    ///
+    /// # Error
+    ///
+    /// If this value is not a number, a runtime error is return
+    pub fn negate(&mut self) {
+        match self {
+            Self::Number(v) => {
+                *v = -*v;
+            }
+            _ => panic!("Check values' type before applying the operation."),
         }
     }
 }
@@ -111,14 +208,10 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
             println!("{:-16} {:4} {}", "OP_CONSTANT", idx, chunk.read_const(*idx))
         }
         OpCode::Return => println!("OP_RETURN"),
-        OpCode::Unary(ref op) => match op {
-            UnaryOp::Negate => println!("OP_NEGATE"),
-        },
-        OpCode::Binary(ref op) => match op {
-            BinaryOp::Add => println!("OP_ADD"),
-            BinaryOp::Subtract => println!("OP_SUBTRACT"),
-            BinaryOp::Multiply => println!("OP_MULTIPLY"),
-            BinaryOp::Divide => println!("OP_DIVIDE"),
-        },
+        OpCode::Negate => println!("OP_NEGATE"),
+        OpCode::Add => println!("OP_ADD"),
+        OpCode::Subtract => println!("OP_SUBTRACT"),
+        OpCode::Multiply => println!("OP_MULTIPLY"),
+        OpCode::Divide => println!("OP_DIVIDE"),
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// Lox token. One difference of the implementation of glox is that we don't
 /// eagerly evaluate the value of a literal.
 #[derive(Debug, Clone)]
@@ -111,6 +113,12 @@ pub struct Position {
 impl Default for Position {
     fn default() -> Self {
         Self { line: 1, column: 1 }
+    }
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "[line {}, col {}]", self.line, self.column)
     }
 }
 

@@ -1,24 +1,39 @@
 use std::fmt;
 
 use crate::{
-    compile, disassemble_chunk, disassemble_instruction, BinaryOp, Chunk, Error, OpCode, Position,
-    UnaryOp, Value,
+    compile, disassemble_chunk, disassemble_instruction, Chunk, Error, OpCode, Position, Value,
 };
 
 /// Virtual machine errors
 #[derive(Debug)]
-pub enum RuntimeError {}
-
+pub enum RuntimeError {
+    /// Pop on an empty stack
+    StackUnderflow,
+    /// Wrong arguments given to binary operators that only accept numbers
+    BinaryNumberOperands(Position),
+    /// Wrong arguments given to unary operators that only accept a numbers
+    UnaryNumberOperand(Position),
+}
+impl std::error::Error for RuntimeError {}
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "RuntimeError")
+        match *self {
+            Self::StackUnderflow => {
+                writeln!(f, "Virtual machine's stack underflow.")
+            }
+            Self::BinaryNumberOperands(p) => {
+                writeln!(f, "Operands must be numbers.\n{} in script.", p)
+            }
+            Self::UnaryNumberOperand(p) => {
+                writeln!(f, "Operand must be a number.\n{} in script.", p)
+            }
+        }
     }
 }
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug, Default)]
 pub struct VM {
-    chunk: Option<Chunk>,
     ip: usize,
     stack: Vec<Value>,
 }
@@ -29,21 +44,31 @@ impl VM {
         let mut chunk = compile(src).ok_or(Error::Compile)?;
         chunk.write_instruction(OpCode::Return, Position::default());
 
-        self.chunk = Some(chunk);
         self.ip = 0;
-        self.run()?;
+        self.run(&chunk)?;
         Ok(())
     }
 
-    /// Run the virtual machine with it currently given chunk.
-    fn run(&mut self) -> Result<(), RuntimeError> {
-        let chunk = match self.chunk {
-            Some(ref c) => c,
-            None => return Ok(()),
-        };
+    fn peek(&self, steps: usize) -> Result<&Value, RuntimeError> {
+        self.stack
+            .get(self.stack.len() - 1 - steps)
+            .ok_or(RuntimeError::StackUnderflow)
+    }
 
+    fn peek_mut(&mut self, steps: usize) -> Result<&mut Value, RuntimeError> {
+        let idx = self.stack.len() - 1 - steps;
+        self.stack.get_mut(idx).ok_or(RuntimeError::StackUnderflow)
+    }
+
+    fn pop(&mut self) -> Result<Value, RuntimeError> {
+        self.stack.pop().ok_or(RuntimeError::StackUnderflow)
+    }
+
+    /// Run the virtual machine with it currently given chunk.
+    fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
         if cfg!(debug_assertions) {
             disassemble_chunk(&chunk, "code");
+            print!("\n\n== execution ==");
         }
 
         loop {
@@ -52,7 +77,7 @@ impl VM {
                 disassemble_instruction(&chunk, self.ip);
             }
 
-            let opcode = chunk.read_instruction(self.ip);
+            let (opcode, pos) = chunk.read_instruction(self.ip);
             self.ip += 1;
             match opcode {
                 OpCode::Constant(ref idx) => {
@@ -60,31 +85,48 @@ impl VM {
                     self.stack.push(val.clone());
                 }
                 OpCode::Return => {
-                    if let Some(val) = self.stack.pop() {
-                        println!("{}", val);
-                    }
+                    let v = self.pop()?;
+                    println!("{}", v);
                     return Ok(());
                 }
-                OpCode::Unary(ref op) => {
-                    if let Some(val) = self.stack.pop() {
-                        match (op, val) {
-                            (UnaryOp::Negate, Value::Number(n)) => {
-                                self.stack.push(Value::Number(-n))
-                            }
-                        }
+                OpCode::Negate => {
+                    let v = self.peek_mut(0)?;
+                    if !v.is_number() {
+                        return Err(RuntimeError::UnaryNumberOperand(*pos));
                     }
+                    v.negate();
                 }
-                OpCode::Binary(ref op) => {
-                    if let (Some(v2), Some(v1)) = (self.stack.pop(), self.stack.pop()) {
-                        // TODO: match on values when there's more value types
-                        let (Value::Number(n1), Value::Number(n2)) = (v1, v2);
-                        match op {
-                            BinaryOp::Add => self.stack.push(Value::Number(n1 + n2)),
-                            BinaryOp::Subtract => self.stack.push(Value::Number(n1 - n2)),
-                            BinaryOp::Multiply => self.stack.push(Value::Number(n1 * n2)),
-                            BinaryOp::Divide => self.stack.push(Value::Number(n1 / n2)),
-                        }
+                OpCode::Add => {
+                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
+                        return Err(RuntimeError::UnaryNumberOperand(*pos));
                     }
+                    let v2 = self.pop()?;
+                    let v1 = self.peek_mut(0)?;
+                    v1.add(&v2);
+                }
+                OpCode::Subtract => {
+                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
+                        return Err(RuntimeError::UnaryNumberOperand(*pos));
+                    }
+                    let v2 = self.pop()?;
+                    let v1 = self.peek_mut(0)?;
+                    v1.subtract(&v2);
+                }
+                OpCode::Multiply => {
+                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
+                        return Err(RuntimeError::UnaryNumberOperand(*pos));
+                    }
+                    let v2 = self.pop()?;
+                    let v1 = self.peek_mut(0)?;
+                    v1.multiply(&v2);
+                }
+                OpCode::Divide => {
+                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
+                        return Err(RuntimeError::UnaryNumberOperand(*pos));
+                    }
+                    let v2 = self.pop()?;
+                    let v1 = self.peek_mut(0)?;
+                    v1.divide(&v2);
                 }
             }
         }

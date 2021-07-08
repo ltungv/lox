@@ -4,7 +4,27 @@ use std::{
     iter::Peekable,
 };
 
-use crate::{scan, token, BinaryOp, Chunk, OpCode, Position, Scanner, Token, UnaryOp, Value};
+use crate::{scan, token, Chunk, OpCode, Position, Scanner, Token, Value};
+
+/// Error while parsing Lox tokens
+#[derive(Debug)]
+pub enum ParseError {
+    /// Current token is not supposed to be there
+    UnexpectedToken(Token, String),
+    /// Reached EOF abruptly
+    UnexpectedEof,
+}
+impl std::error::Error for ParseError {}
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnexpectedToken(ref tok, ref msg) => {
+                write!(f, "{} Error at '{}': {}.", tok.pos, tok.lexeme, msg,)
+            }
+            Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
+        }
+    }
+}
 
 /// Compile the given source code in to bytecodes that can be read
 /// by the virtual machine
@@ -18,30 +38,6 @@ pub fn compile(src: &str) -> Option<Chunk> {
         return None;
     }
     Some(chunk)
-}
-
-/// Error while parsing Lox tokens
-#[derive(Debug)]
-pub enum ParseError {
-    /// Current token is not supposed to be there
-    UnexpectedToken(Token, String),
-    /// Reached EOF abruptly
-    UnexpectedEof,
-}
-
-impl std::error::Error for ParseError {}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnexpectedToken(ref tok, ref msg) => write!(
-                f,
-                "[line {}] [column {}] Error at '{}': {}.",
-                tok.pos.line, tok.pos.column, tok.lexeme, msg,
-            ),
-            Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
-        }
-    }
 }
 
 /// Scan for tokens and emit corresponding bytecodes.
@@ -68,15 +64,16 @@ impl<'a> Parser<'a> {
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
         let tok = self.peek().ok_or(ParseError::UnexpectedEof)?;
-        let prefix_rule = Self::get_rule(&tok.typ).prefix;
-        if prefix_rule.is_none() {
-            self.had_error = true;
-            return Err(ParseError::UnexpectedToken(
-                tok,
-                "Expect expression".to_string(),
-            ));
-        }
-        prefix_rule.unwrap()(self)?;
+        match Self::get_rule(&tok.typ).prefix {
+            None => {
+                self.had_error = true;
+                return Err(ParseError::UnexpectedToken(
+                    tok,
+                    "Expect expression".to_string(),
+                ));
+            }
+            Some(rule) => rule(self)?,
+        };
 
         while let Some(tok) = self.peek() {
             if precedence > Self::get_rule(&tok.typ).precedence {
@@ -99,10 +96,10 @@ impl<'a> Parser<'a> {
         self.parse_precedence(rule.precedence.next())?;
 
         match operator.typ {
-            token::Type::Plus => self.emit(OpCode::Binary(BinaryOp::Add), operator.pos),
-            token::Type::Minus => self.emit(OpCode::Binary(BinaryOp::Subtract), operator.pos),
-            token::Type::Star => self.emit(OpCode::Binary(BinaryOp::Multiply), operator.pos),
-            token::Type::Slash => self.emit(OpCode::Binary(BinaryOp::Divide), operator.pos),
+            token::Type::Plus => self.emit(OpCode::Add, operator.pos),
+            token::Type::Minus => self.emit(OpCode::Subtract, operator.pos),
+            token::Type::Star => self.emit(OpCode::Multiply, operator.pos),
+            token::Type::Slash => self.emit(OpCode::Divide, operator.pos),
             _ => unreachable!(),
         }
         Ok(())
@@ -112,7 +109,7 @@ impl<'a> Parser<'a> {
         let operator = self.advance().ok_or(ParseError::UnexpectedEof)?;
         self.parse_precedence(Precedence::Unary)?;
         match operator.typ {
-            token::Type::Minus => self.emit(OpCode::Unary(UnaryOp::Negate), operator.pos),
+            token::Type::Minus => self.emit(OpCode::Negate, operator.pos),
             _ => unreachable!(),
         }
         Ok(())
@@ -125,7 +122,6 @@ impl<'a> Parser<'a> {
     }
 
     fn number(&mut self) -> Result<(), ParseError> {
-        // the next token should be checked beforehand, so calling unwrap is safe
         let tok = self.advance().ok_or(ParseError::UnexpectedEof)?;
         assert_eq!(tok.typ, token::Type::Number);
 
@@ -137,11 +133,9 @@ impl<'a> Parser<'a> {
 
     fn advance(&mut self) -> Option<Token> {
         while let Some(Err(err)) = self.tokens.peek() {
-            // unwrap and unwrap_err is safe because our loop condition ensured that
             eprintln!("{}", err);
             self.had_error = true;
         }
-        // unwrap is safe since we have skipped all errors
         self.tokens.next().map(Result::unwrap)
     }
 
@@ -150,7 +144,6 @@ impl<'a> Parser<'a> {
             eprintln!("{}", err);
             self.had_error = true;
         }
-        // unwrap is safe since we have skipped all errors
         self.tokens.peek().map(|peeked| match peeked {
             Err(_) => unreachable!("Errors should have been skipped."),
             Ok(tok) => tok.clone(),
@@ -245,7 +238,7 @@ impl<'a> From<(Precedence, Option<ParseFn<'a>>, Option<ParseFn<'a>>)> for ParseR
     }
 }
 
-/// All precedencCompilere levels in Lox
+/// All precedence levels in Lox
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
     /// No precedence
