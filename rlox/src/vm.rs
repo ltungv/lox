@@ -114,11 +114,41 @@ impl VM {
                         RuntimeError::UnaryNumberOperand,
                     )?;
                 }
+                OpCode::Equal => {
+                    self.apply_binary_op(
+                        pos,
+                        |v1, v2| {
+                            *v1 = Value::Bool(v1.equal(v2));
+                        },
+                        |_| true,
+                        |_| unreachable!(),
+                    )?;
+                }
+                OpCode::Greater => {
+                    self.apply_binary_op(
+                        pos,
+                        |v1, v2| {
+                            *v1 = Value::Bool(v1.greater(v2));
+                        },
+                        Value::is_number,
+                        RuntimeError::BinaryNumberOperands,
+                    )?;
+                }
+                OpCode::Less => {
+                    self.apply_binary_op(
+                        pos,
+                        |v1, v2| {
+                            *v1 = Value::Bool(v1.less(v2));
+                        },
+                        Value::is_number,
+                        RuntimeError::BinaryNumberOperands,
+                    )?;
+                }
                 OpCode::Add => {
                     self.apply_binary_op(
                         pos,
                         Value::add,
-                        (Value::is_number, Value::is_number),
+                        Value::is_number,
                         RuntimeError::BinaryNumberOperands,
                     )?;
                 }
@@ -126,7 +156,7 @@ impl VM {
                     self.apply_binary_op(
                         pos,
                         Value::subtract,
-                        (Value::is_number, Value::is_number),
+                        Value::is_number,
                         RuntimeError::BinaryNumberOperands,
                     )?;
                 }
@@ -134,7 +164,7 @@ impl VM {
                     self.apply_binary_op(
                         pos,
                         Value::multiply,
-                        (Value::is_number, Value::is_number),
+                        Value::is_number,
                         RuntimeError::BinaryNumberOperands,
                     )?;
                 }
@@ -142,7 +172,7 @@ impl VM {
                     self.apply_binary_op(
                         pos,
                         Value::divide,
-                        (Value::is_number, Value::is_number),
+                        Value::is_number,
                         RuntimeError::BinaryNumberOperands,
                     )?;
                 }
@@ -177,10 +207,10 @@ impl VM {
         &mut self,
         pos: &Position,
         mut op: F,
-        check: (P, P),
+        check: P,
         err: E,
     ) -> Result<(), RuntimeError> {
-        if !check.0(self.peek(0)?) || !check.1(self.peek(1)?) {
+        if !check(self.peek(0)?) || !check(self.peek(1)?) {
             return Err(err(*pos));
         }
         let v2 = self.pop()?;

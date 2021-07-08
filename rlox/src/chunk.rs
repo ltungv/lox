@@ -54,6 +54,22 @@ impl Chunk {
 }
 
 /// OpCode is a number that specifies the type of the instruction.
+///
+/// # Notes
+///
+/// If it was for performances purposes, the following options could be considered:
+/// + Having the opcode designed to be as close as possbible to existing lower-level instructions
+/// + Having specialized opcode for constant
+///
+/// We don't have a `OpCode::NotEqual` because we will transform `a != b` to `!(a == b)` to demonstrated
+/// that bytecode can deviate from the actual user's code as long as they behave similarly. This is
+/// also applied for operator `<=` and operator `>=`.
+///
+/// `a <= b` does not equals equivalent to `!(a > b)`, similarly with greater and greater or equal.
+/// According to [IEEE 754] all comparison operators return `false` when an operand is `NaN`. These
+/// are implementation details that we should keep in mind when making a real language.
+///
+/// [IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum OpCode {
@@ -71,6 +87,12 @@ pub enum OpCode {
     Not,
     /// Negate a single number operand
     Negate,
+    /// Check for equality between 2 operands.
+    Equal,
+    /// Compare if the first operand is greater than the second
+    Greater,
+    /// Compare if the first operand is less than the second
+    Less,
     /// Add two number operands
     Add,
     /// Subtract the first operand with the second operand, both operands
@@ -126,6 +148,41 @@ impl Value {
             Self::Bool(b) => !b,
             Self::Nil => true,
             _ => false,
+        }
+    }
+
+    /// Check for equality between two values of the same type. If the operands are of different
+    /// types, return `false`.
+    pub fn equal(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Self::Nil, Self::Nil) => true,
+            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
+            (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
+            _ => false,
+        }
+    }
+
+    /// Check if the current value is greater than the other one.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers, a runtime error is return
+    pub fn greater(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Self::Number(v1), Self::Number(v2)) => v1 > v2,
+            _ => panic!("Check values' type before applying the operation."),
+        }
+    }
+
+    /// Check if the current value is less than the other one.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers, a runtime error is return
+    pub fn less(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Self::Number(v1), Self::Number(v2)) => v1 < v2,
+            _ => panic!("Check values' type before applying the operation."),
         }
     }
 
@@ -230,6 +287,9 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Not => println!("OP_NOT"),
         OpCode::Negate => println!("OP_NEGATE"),
+        OpCode::Equal => println!("OP_EQUAL"),
+        OpCode::Greater => println!("OP_GREATER"),
+        OpCode::Less => println!("OP_LESS"),
         OpCode::Add => println!("OP_ADD"),
         OpCode::Subtract => println!("OP_SUBTRACT"),
         OpCode::Multiply => println!("OP_MULTIPLY"),

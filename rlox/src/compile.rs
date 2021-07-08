@@ -96,6 +96,21 @@ impl<'a> Parser<'a> {
         self.parse_precedence(rule.precedence.next())?;
 
         match operator.typ {
+            token::Type::BangEqual => {
+                self.emit(OpCode::Equal, operator.pos);
+                self.emit(OpCode::Not, operator.pos);
+            },
+            token::Type::EqualEqual => self.emit(OpCode::Equal, operator.pos),
+            token::Type::Greater => self.emit(OpCode::Greater, operator.pos),
+            token::Type::GreaterEqual => {
+                self.emit(OpCode::Less, operator.pos);
+                self.emit(OpCode::Not, operator.pos);
+            }
+            token::Type::Less => self.emit(OpCode::Less, operator.pos),
+            token::Type::LessEqual => {
+                self.emit(OpCode::Greater, operator.pos);
+                self.emit(OpCode::Not, operator.pos);
+            }
             token::Type::Plus => self.emit(OpCode::Add, operator.pos),
             token::Type::Minus => self.emit(OpCode::Subtract, operator.pos),
             token::Type::Star => self.emit(OpCode::Multiply, operator.pos),
@@ -202,13 +217,13 @@ impl<'a> Parser<'a> {
             token::Type::Slash => (Precedence::Factor, None, Some(Self::binary)),
             token::Type::Star => (Precedence::Factor, None, Some(Self::binary)),
             token::Type::Bang => (Precedence::None, Some(Self::unary), None),
-            token::Type::BangEqual => (Precedence::None, None, None),
+            token::Type::BangEqual => (Precedence::Equality, None, Some(Self::binary)),
             token::Type::Equal => (Precedence::None, None, None),
-            token::Type::EqualEqual => (Precedence::None, None, None),
-            token::Type::Greater => (Precedence::None, None, None),
-            token::Type::GreaterEqual => (Precedence::None, None, None),
-            token::Type::Less => (Precedence::None, None, None),
-            token::Type::LessEqual => (Precedence::None, None, None),
+            token::Type::EqualEqual => (Precedence::Equality, None, Some(Self::binary)),
+            token::Type::Greater => (Precedence::Comparison, None, Some(Self::binary)),
+            token::Type::GreaterEqual => (Precedence::Comparison, None, Some(Self::binary)),
+            token::Type::Less => (Precedence::Comparison, None, Some(Self::binary)),
+            token::Type::LessEqual => (Precedence::Comparison, None, Some(Self::binary)),
             token::Type::Ident => (Precedence::None, None, None),
             token::Type::String => (Precedence::None, None, None),
             token::Type::Number => (Precedence::None, Some(Self::number), None),
