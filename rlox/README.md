@@ -6,9 +6,9 @@ A bytecode virtual machine written in Rust for the Lox programming language.
 
 ### From part 3
 
++ [x] Do inplace update on the stack for operatos that pop a value and push back a value immediately after.
 + [ ] Dynamic VM' stack size. We already got this from Rust's Vec, but limiting ourself to 256.
 + [ ] Support `OP_CONSTANT_LONG` that takes a 24-bit number to extend the number of constants that can be contained
-+ [ ] Do inplace update on the stack for operatos that pop a value and push back a value immediately after.
 + [ ] String interpolation
   ```ruby
   var drink = "Tea";

@@ -109,6 +109,7 @@ impl<'a> Parser<'a> {
         let operator = self.advance()?;
         self.parse_precedence(Precedence::Unary)?;
         match operator.typ {
+            token::Type::Bang => self.emit(OpCode::Not, operator.pos),
             token::Type::Minus => self.emit(OpCode::Negate, operator.pos),
             _ => unreachable!("Rule table is wrong."),
         }
@@ -200,7 +201,7 @@ impl<'a> Parser<'a> {
             token::Type::Semicolon => (Precedence::None, None, None),
             token::Type::Slash => (Precedence::Factor, None, Some(Self::binary)),
             token::Type::Star => (Precedence::Factor, None, Some(Self::binary)),
-            token::Type::Bang => (Precedence::None, None, None),
+            token::Type::Bang => (Precedence::None, Some(Self::unary), None),
             token::Type::BangEqual => (Precedence::None, None, None),
             token::Type::Equal => (Precedence::None, None, None),
             token::Type::EqualEqual => (Precedence::None, None, None),

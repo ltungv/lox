@@ -94,47 +94,99 @@ impl VM {
                     println!("{}", v);
                     return Ok(());
                 }
+                OpCode::Not => {
+                    self.apply_unary_op(
+                        pos,
+                        |v| {
+                            *v = Value::Bool(v.is_falsey());
+                        },
+                        |_| true,
+                        |_| unreachable!(),
+                    )?;
+                }
                 OpCode::Negate => {
-                    let v = self.peek_mut(0)?;
-                    if !v.is_number() {
-                        return Err(RuntimeError::UnaryNumberOperand(*pos));
-                    }
-                    v.negate();
+                    self.apply_unary_op(
+                        pos,
+                        |v| {
+                            *v = Value::Bool(v.is_falsey());
+                        },
+                        Value::is_number,
+                        RuntimeError::UnaryNumberOperand,
+                    )?;
                 }
                 OpCode::Add => {
-                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
-                        return Err(RuntimeError::UnaryNumberOperand(*pos));
-                    }
-                    let v2 = self.pop()?;
-                    let v1 = self.peek_mut(0)?;
-                    v1.add(&v2);
+                    self.apply_binary_op(
+                        pos,
+                        Value::add,
+                        (Value::is_number, Value::is_number),
+                        RuntimeError::BinaryNumberOperands,
+                    )?;
                 }
                 OpCode::Subtract => {
-                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
-                        return Err(RuntimeError::UnaryNumberOperand(*pos));
-                    }
-                    let v2 = self.pop()?;
-                    let v1 = self.peek_mut(0)?;
-                    v1.subtract(&v2);
+                    self.apply_binary_op(
+                        pos,
+                        Value::subtract,
+                        (Value::is_number, Value::is_number),
+                        RuntimeError::BinaryNumberOperands,
+                    )?;
                 }
                 OpCode::Multiply => {
-                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
-                        return Err(RuntimeError::UnaryNumberOperand(*pos));
-                    }
-                    let v2 = self.pop()?;
-                    let v1 = self.peek_mut(0)?;
-                    v1.multiply(&v2);
+                    self.apply_binary_op(
+                        pos,
+                        Value::multiply,
+                        (Value::is_number, Value::is_number),
+                        RuntimeError::BinaryNumberOperands,
+                    )?;
                 }
                 OpCode::Divide => {
-                    if !self.peek(0)?.is_number() || !self.peek(1)?.is_number() {
-                        return Err(RuntimeError::UnaryNumberOperand(*pos));
-                    }
-                    let v2 = self.pop()?;
-                    let v1 = self.peek_mut(0)?;
-                    v1.divide(&v2);
+                    self.apply_binary_op(
+                        pos,
+                        Value::divide,
+                        (Value::is_number, Value::is_number),
+                        RuntimeError::BinaryNumberOperands,
+                    )?;
                 }
             }
         }
+    }
+
+    fn apply_unary_op<
+        F: FnMut(&mut Value),
+        P: Fn(&Value) -> bool,
+        E: Fn(Position) -> RuntimeError,
+    >(
+        &mut self,
+        pos: &Position,
+        mut op: F,
+        check: P,
+        err: E,
+    ) -> Result<(), RuntimeError> {
+        let v = self.peek_mut(0)?;
+        if !check(v) {
+            return Err(err(*pos));
+        }
+        op(v);
+        Ok(())
+    }
+
+    fn apply_binary_op<
+        F: FnMut(&mut Value, &Value),
+        P: Fn(&Value) -> bool,
+        E: Fn(Position) -> RuntimeError,
+    >(
+        &mut self,
+        pos: &Position,
+        mut op: F,
+        check: (P, P),
+        err: E,
+    ) -> Result<(), RuntimeError> {
+        if !check.0(self.peek(0)?) || !check.1(self.peek(1)?) {
+            return Err(err(*pos));
+        }
+        let v2 = self.pop()?;
+        let v1 = self.peek_mut(0)?;
+        op(v1, &v2);
+        Ok(())
     }
 
     fn peek(&self, steps: usize) -> Result<&Value, RuntimeError> {

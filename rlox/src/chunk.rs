@@ -65,8 +65,10 @@ pub enum OpCode {
     True,
     /// Load a `false` value
     False,
-    /// Return from the current function.
+    /// Return from the current function
     Return,
+    /// Apply logical `not` to a single boolean operand
+    Not,
     /// Negate a single number operand
     Negate,
     /// Add two number operands
@@ -116,6 +118,15 @@ impl Value {
     /// Return true if this is a Lox number value
     pub fn is_number(&self) -> bool {
         matches!(self, Self::Number(_))
+    }
+
+    /// Return true if the value is `nil` or `false`. Otherwise, return false.
+    pub fn is_falsey(&self) -> bool {
+        match self {
+            Self::Bool(b) => !b,
+            Self::Nil => true,
+            _ => false,
+        }
     }
 
     /// Add two values.
@@ -217,6 +228,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),
         OpCode::Return => println!("OP_RETURN"),
+        OpCode::Not => println!("OP_NOT"),
         OpCode::Negate => println!("OP_NEGATE"),
         OpCode::Add => println!("OP_ADD"),
         OpCode::Subtract => println!("OP_SUBTRACT"),
