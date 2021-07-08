@@ -107,9 +107,7 @@ impl VM {
                 OpCode::Negate => {
                     self.apply_unary_op(
                         pos,
-                        |v| {
-                            *v = Value::Bool(v.is_falsey());
-                        },
+                        Value::negate,
                         Value::is_number,
                         RuntimeError::UnaryNumberOperand,
                     )?;
