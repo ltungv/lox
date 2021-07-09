@@ -18,6 +18,12 @@
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum OpCode {
+    /// Pop the top of the stack
+    Pop,
+    /// Print the expression on top of the stack
+    Print,
+    /// Return from the current function
+    Return,
     /// Load a constant
     Constant(u8),
     /// Load a `nil` value
@@ -26,10 +32,6 @@ pub enum OpCode {
     True,
     /// Load a `false` value
     False,
-    /// Print the expression on top of the stack
-    Print,
-    /// Return from the current function
-    Return,
     /// Apply logical `not` to a single boolean operand
     Not,
     /// Negate a single number operand

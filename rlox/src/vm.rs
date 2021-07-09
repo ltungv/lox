@@ -51,13 +51,9 @@ impl VM {
             let (opcode, pos) = chunk.read_instruction(self.ip);
             self.ip += 1;
             match opcode {
-                OpCode::Constant(ref idx) => {
-                    let val = chunk.read_const(*idx);
-                    self.push(val.clone())?;
+                OpCode::Pop => {
+                    self.pop()?;
                 }
-                OpCode::Nil => self.push(Value::Nil)?,
-                OpCode::True => self.push(Value::Bool(true))?,
-                OpCode::False => self.push(Value::Bool(false))?,
                 OpCode::Print => {
                     let v = self.pop()?;
                     println!("{}", v.as_string(strings));
@@ -66,6 +62,13 @@ impl VM {
                     // exit the interpreter
                     return Ok(());
                 }
+                OpCode::Constant(ref idx) => {
+                    let val = chunk.read_const(*idx);
+                    self.push(val.clone())?;
+                }
+                OpCode::Nil => self.push(Value::Nil)?,
+                OpCode::True => self.push(Value::Bool(true))?,
+                OpCode::False => self.push(Value::Bool(false))?,
                 OpCode::Not => {
                     self.apply_unary_op(
                         pos,

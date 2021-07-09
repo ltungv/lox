@@ -28,6 +28,7 @@ pub struct Parser<'a> {
     chunk: &'a mut Chunk,
     strings: &'a mut StringInterner,
     tokens: Peekable<scan::Iter<'a>>,
+    last_pos: Position,
     had_scan_error: bool,
 }
 
@@ -38,6 +39,7 @@ impl<'a> Parser<'a> {
             chunk,
             strings,
             tokens: Scanner::new(src).into_iter().peekable(),
+            last_pos: Position::default(),
             had_scan_error: false,
         }
     }
@@ -66,13 +68,20 @@ impl<'a> Parser<'a> {
         if let Some(tok) = self.advance_when(token::Type::Print) {
             return self.print_statement(&tok);
         }
-        Ok(())
+        self.expression_statement()
     }
 
     fn print_statement(&mut self, tok: &Token) -> Result<(), ParseError> {
         self.expression()?;
         self.consume(token::Type::Semicolon, "Expect ';' after value.")?;
         self.chunk.write_instruction(OpCode::Print, tok.pos);
+        Ok(())
+    }
+
+    fn expression_statement(&mut self) -> Result<(), ParseError> {
+        self.expression()?;
+        self.consume(token::Type::Semicolon, "Expect ';' after value.")?;
+        self.chunk.write_instruction(OpCode::Pop, self.last_pos);
         Ok(())
     }
 
@@ -163,7 +172,11 @@ impl<'a> Parser<'a> {
         }
         self.tokens
             .next()
-            .map(|t| t.expect("All errors have been skipped."))
+            .map(|t| {
+                let t = t.expect("All errors have been skipped.");
+                self.last_pos = t.pos;
+                t
+            })
             .ok_or(ParseError::UnexpectedEof)
     }
 
@@ -371,6 +384,9 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
     }
 
     match chunk.instructions[idx] {
+        OpCode::Pop => println!("OP_POP"),
+        OpCode::Print => println!("OP_PRINT"),
+        OpCode::Return => println!("OP_RETURN"),
         OpCode::Constant(ref idx) => match chunk.read_const(*idx) {
             Value::String(id) => println!(
                 "{:-16} {:4} {}",
@@ -385,8 +401,6 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),
-        OpCode::Print => println!("OP_PRINT"),
-        OpCode::Return => println!("OP_RETURN"),
         OpCode::Not => println!("OP_NOT"),
         OpCode::Negate => println!("OP_NEGATE"),
         OpCode::Equal => println!("OP_EQUAL"),
