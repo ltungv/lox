@@ -1,31 +1,11 @@
-use std::{fmt, str::Chars};
+use std::str::Chars;
 
 use itertools::{self, MultiPeek};
 
 use crate::{
     token::{self, Token},
-    Position,
+    Position, ScanError,
 };
-
-/// Error while scanning Lox source code
-#[derive(Debug, Clone)]
-pub enum ScanError {
-    /// A string literal is unterminated
-    UnterminatedString(Position),
-    /// Invalid character
-    UnexpectedCharacter(Position, char),
-}
-impl std::error::Error for ScanError {}
-impl fmt::Display for ScanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnterminatedString(pos) => write!(f, "{} Error: Unterminated string.", pos),
-            Self::UnexpectedCharacter(pos, c) => {
-                write!(f, "{} Error: Unexpected character '{}'.", pos, c)
-            }
-        }
-    }
-}
 
 /// Scanner reads characters from the source code and groups them in to a sequence of tokens.
 #[derive(Debug)]

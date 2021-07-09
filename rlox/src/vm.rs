@@ -1,54 +1,10 @@
-use std::fmt;
-
 use crate::{
     compile, disassemble_chunk, disassemble_instruction, Chunk, Error, OpCode, Position,
-    StringInterner, Value,
+    RuntimeError, StringInterner, Value,
 };
 
 /// We're limiting the stack's size to be in specification with clox
 pub const MAX_STACK_SIZE: usize = 256;
-
-/// Virtual machine errors
-#[derive(Debug)]
-pub enum RuntimeError {
-    /// Pus on an full stack
-    StackOverflow,
-    /// Pop on an empty stack
-    StackUnderflow,
-    /// Wrong arguments given to binary add operators that only accept two numbers
-    /// or two strings
-    InvalidAddOperands(Position),
-    /// Wrong arguments given to binary operators that only accept numbers
-    BinaryNumberOperands(Position),
-    /// Wrong arguments given to unary operators that only accept a numbers
-    UnaryNumberOperand(Position),
-}
-impl std::error::Error for RuntimeError {}
-impl fmt::Display for RuntimeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match *self {
-            Self::StackOverflow => {
-                writeln!(f, "Virtual machine's stack overflows.")
-            }
-            Self::StackUnderflow => {
-                writeln!(f, "Virtual machine's stack underflows.")
-            }
-            Self::InvalidAddOperands(p) => {
-                writeln!(
-                    f,
-                    "Operands must be two numbers or two strings.\n{} in script.",
-                    p
-                )
-            }
-            Self::BinaryNumberOperands(p) => {
-                writeln!(f, "Operands must be numbers.\n{} in script.", p)
-            }
-            Self::UnaryNumberOperand(p) => {
-                writeln!(f, "Operand must be a number.\n{} in script.", p)
-            }
-        }
-    }
-}
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug)]

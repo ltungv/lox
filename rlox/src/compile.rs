@@ -1,26 +1,6 @@
-use std::{fmt, iter::Peekable};
+use std::iter::Peekable;
 
-use crate::{scan, token, Chunk, OpCode, Position, Scanner, StringInterner, Token, Value};
-
-/// Error while parsing Lox tokens
-#[derive(Debug)]
-pub enum ParseError {
-    /// Current token is not supposed to be there
-    UnexpectedToken(Position, String, String),
-    /// Reached EOF abruptly
-    UnexpectedEof,
-}
-impl std::error::Error for ParseError {}
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnexpectedToken(ref pos, ref lexeme, ref msg) => {
-                write!(f, "{} Error at '{}': {}.", pos, lexeme, msg,)
-            }
-            Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
-        }
-    }
-}
+use crate::{scan, token, OpCode, ParseError, Position, Scanner, StringInterner, Token, Value};
 
 /// Compile the given source code in to bytecodes that can be read
 /// by the virtual machine
@@ -233,6 +213,10 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Chunk is a sequence of instructions and data that will be written to by the compiler
+/// and later run by the virtual-machine.
+///
+/// # Examples
 /// All precedence levels in Lox
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
@@ -289,5 +273,97 @@ impl Precedence {
             token::Type::Slash | token::Type::Star => (Precedence::Factor),
             _ => Self::None,
         }
+    }
+}
+
+///
+/// ```
+/// use rlox::{Chunk, OpCode, Position, Value};
+///
+/// let mut chunk = Chunk::default();
+/// let const_id = chunk.write_const(Value::Number(1.0));
+/// assert!(matches!(chunk.read_const(const_id), &Value::Number(1.0)));
+///
+/// chunk.write_instruction(OpCode::Constant(const_id), Position::default());
+/// assert!(matches!(
+///     chunk.read_instruction(0),
+///     (&OpCode::Constant(cost_id), &Position { line: 1, column : 1 }),
+/// ));
+/// ```
+#[derive(Default, Debug)]
+pub struct Chunk {
+    instructions: Vec<OpCode>,
+    constants: Vec<Value>,
+    positions: Vec<Position>,
+}
+
+impl Chunk {
+    /// Add a new instruction to the chunk.
+    pub fn write_instruction(&mut self, code: OpCode, pos: Position) {
+        self.instructions.push(code);
+        self.positions.push(pos);
+    }
+
+    /// Read the instruction at the index.
+    pub fn read_instruction(&self, idx: usize) -> (&OpCode, &Position) {
+        (&self.instructions[idx], &self.positions[idx])
+    }
+
+    /// Add a constant value to the chunk and return it position in the Vec
+    pub fn write_const(&mut self, val: Value) -> u8 {
+        self.constants.push(val);
+        self.constants.len() as u8 - 1
+    }
+
+    /// Read the constant at the given index
+    pub fn read_const(&self, idx: u8) -> &Value {
+        &self.constants[idx as usize]
+    }
+}
+
+/// Go through the instructions in the chunk and display them in human-readable format.
+#[cfg(debug_assertions)]
+pub fn disassemble_chunk(chunk: &Chunk, name: &str, strings: &StringInterner) {
+    println!("== {} ==", name);
+    for i in 0..chunk.instructions.len() {
+        disassemble_instruction(chunk, i, strings);
+    }
+}
+
+/// Display an instruction in human readable format.
+#[cfg(debug_assertions)]
+pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringInterner) {
+    print!("{:04} ", idx);
+    if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
+        print!("   | ");
+    } else {
+        print!("{:4} ", chunk.positions[idx].line);
+    }
+
+    match chunk.instructions[idx] {
+        OpCode::Constant(ref idx) => match chunk.read_const(*idx) {
+            Value::String(id) => println!(
+                "{:-16} {:4} {}",
+                "OP_CONSTANT",
+                idx,
+                strings
+                    .resolve(*id)
+                    .expect("String must be allocated before access.")
+            ),
+            val => println!("{:-16} {:4} {}", "OP_CONSTANT", idx, val.as_string(strings)),
+        },
+        OpCode::Nil => println!("OP_NIL"),
+        OpCode::True => println!("OP_TRUE"),
+        OpCode::False => println!("OP_FALSE"),
+        OpCode::Return => println!("OP_RETURN"),
+        OpCode::Not => println!("OP_NOT"),
+        OpCode::Negate => println!("OP_NEGATE"),
+        OpCode::Equal => println!("OP_EQUAL"),
+        OpCode::Greater => println!("OP_GREATER"),
+        OpCode::Less => println!("OP_LESS"),
+        OpCode::Add => println!("OP_ADD"),
+        OpCode::Subtract => println!("OP_SUBTRACT"),
+        OpCode::Multiply => println!("OP_MULTIPLY"),
+        OpCode::Divide => println!("OP_DIVIDE"),
     }
 }
