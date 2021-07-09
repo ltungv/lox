@@ -144,7 +144,10 @@ impl<'a> Parser<'a> {
 
     fn number(&mut self, tok: &Token) -> Result<(), ParseError> {
         assert_eq!(tok.typ, token::Type::Number);
-        let value = tok.lexeme.parse().unwrap();
+        let value = tok
+            .lexeme
+            .parse()
+            .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
         let constant = self.chunk.write_const(Value::Number(value));
         self.chunk
             .write_instruction(OpCode::Constant(constant), tok.pos);
@@ -159,7 +162,7 @@ impl<'a> Parser<'a> {
         }
         self.tokens
             .next()
-            .map(Result::unwrap)
+            .map(|t| t.expect("All errors have been skipped."))
             .ok_or(ParseError::UnexpectedEof)
     }
 
