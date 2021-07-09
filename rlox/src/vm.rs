@@ -1,7 +1,8 @@
 use std::fmt;
 
 use crate::{
-    compile, disassemble_chunk, disassemble_instruction, Chunk, Error, OpCode, Position, Value,
+    compile, disassemble_chunk, disassemble_instruction, Chunk, Error, OpCode, Position,
+    StringInterner, Value,
 };
 
 /// We're limiting the stack's size to be in specification with clox
@@ -68,25 +69,25 @@ impl Default for VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let mut chunk = compile(src).ok_or(Error::Compile)?;
+        let (mut chunk, mut strings) = compile(src).ok_or(Error::Compile)?;
         chunk.write_instruction(OpCode::Return, Position::default());
 
         self.ip = 0;
-        self.run(&chunk)?;
+        self.run(&chunk, &mut strings)?;
         Ok(())
     }
 
     /// Run the virtual machine with it currently given chunk.
-    fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
+    fn run(&mut self, chunk: &Chunk, strings: &mut StringInterner) -> Result<(), RuntimeError> {
         if cfg!(debug_assertions) {
-            disassemble_chunk(&chunk, "code");
+            disassemble_chunk(&chunk, "code", strings);
             print!("\n\n== execution ==");
         }
 
         loop {
             if cfg!(debug_assertions) {
-                print_stack_trace(&self.stack);
-                disassemble_instruction(&chunk, self.ip);
+                print_stack_trace(&self.stack, strings);
+                disassemble_instruction(&chunk, self.ip, strings);
             }
 
             let (opcode, pos) = chunk.read_instruction(self.ip);
@@ -101,7 +102,7 @@ impl VM {
                 OpCode::False => self.push(Value::Bool(false))?,
                 OpCode::Return => {
                     let v = self.pop()?;
-                    println!("{}", v);
+                    println!("{}", v.as_string(strings));
                     return Ok(());
                 }
                 OpCode::Not => {
@@ -156,9 +157,17 @@ impl VM {
                     self.apply_binary_op(
                         pos,
                         Value::add,
-                        |v| v.is_number() || v.is_string(),
+                        |v| v.is_number(),
                         RuntimeError::InvalidAddOperands,
-                    )?;
+                    )
+                    .or_else(|_| {
+                        self.apply_binary_op(
+                            pos,
+                            |v1, v2| v1.concat(v2, strings),
+                            |v| v.is_string(),
+                            RuntimeError::InvalidAddOperands,
+                        )
+                    })?;
                 }
                 OpCode::Subtract => {
                     self.apply_binary_op(
@@ -252,11 +261,11 @@ impl VM {
 }
 
 #[cfg(debug_assertions)]
-fn print_stack_trace(stack: &[Value]) {
+fn print_stack_trace(stack: &[Value], strings: &StringInterner) {
     // print stack trace
     print!("          ");
     for val in stack {
-        print!("[ {} ]", val);
+        print!("[ {} ]", val.as_string(strings));
     }
     println!();
 }

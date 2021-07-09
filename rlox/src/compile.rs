@@ -1,6 +1,6 @@
 use std::{fmt, iter::Peekable};
 
-use crate::{scan, token, Chunk, OpCode, Position, Scanner, Token, Value};
+use crate::{scan, token, Chunk, OpCode, Position, Scanner, StringInterner, Token, Value};
 
 /// Error while parsing Lox tokens
 #[derive(Debug)]
@@ -24,31 +24,36 @@ impl fmt::Display for ParseError {
 
 /// Compile the given source code in to bytecodes that can be read
 /// by the virtual machine
-pub fn compile(src: &str) -> Option<Chunk> {
+pub fn compile(src: &str) -> Option<(Chunk, StringInterner)> {
     let mut chunk = Chunk::default();
-    let mut parser = Parser::new(&mut chunk, src);
+    let mut strings = StringInterner::default();
+
+    let mut parser = Parser::new(&mut chunk, &mut strings, src);
     if let Err(err) = parser.expression() {
         eprintln!("{}", err);
     };
+
     if parser.had_scan_error {
         return None;
     }
-    Some(chunk)
+    Some((chunk, strings))
 }
 
 /// Scan for tokens and emit corresponding bytecodes.
 #[derive(Debug)]
 pub struct Parser<'a> {
     chunk: &'a mut Chunk,
+    strings: &'a mut StringInterner,
     tokens: Peekable<scan::Iter<'a>>,
     had_scan_error: bool,
 }
 
 impl<'a> Parser<'a> {
     /// Create a new parser
-    pub fn new(chunk: &'a mut Chunk, src: &'a str) -> Self {
+    pub fn new(chunk: &'a mut Chunk, strings: &'a mut StringInterner, src: &'a str) -> Self {
         Self {
             chunk,
+            strings,
             tokens: Scanner::new(src).into_iter().peekable(),
             had_scan_error: false,
         }
@@ -129,7 +134,9 @@ impl<'a> Parser<'a> {
     fn string(&mut self, tok: &Token) -> Result<(), ParseError> {
         assert_eq!(tok.typ, token::Type::String);
         let value = tok.lexeme[1..tok.lexeme.len() - 1].to_string();
-        let constant = self.chunk.write_const(Value::String(value));
+        let constant = self
+            .chunk
+            .write_const(Value::String(self.strings.get_or_intern(value)));
         self.chunk
             .write_instruction(OpCode::Constant(constant), tok.pos);
         Ok(())
@@ -270,13 +277,13 @@ impl Precedence {
 
     fn of(typ: &token::Type) -> Self {
         match typ {
+            token::Type::BangEqual | token::Type::EqualEqual => (Precedence::Equality),
             token::Type::Greater
             | token::Type::GreaterEqual
             | token::Type::Less
             | token::Type::LessEqual => Precedence::Comparison,
             token::Type::Minus | token::Type::Plus => (Precedence::Term),
             token::Type::Slash | token::Type::Star => (Precedence::Factor),
-            token::Type::Bang | token::Type::BangEqual => (Precedence::Equality),
             _ => Self::None,
         }
     }

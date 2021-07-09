@@ -1,6 +1,6 @@
 //! This module deals with chunks of bytecodes.
 
-use std::{fmt, rc::Rc};
+use string_interner::{symbol::SymbolU32, DefaultBackend, DefaultHashBuilder};
 
 use crate::Position;
 
@@ -105,6 +105,13 @@ pub enum OpCode {
     Divide,
 }
 
+/// Interned string id
+pub type StringId = SymbolU32;
+
+/// Default string interner
+pub type StringInterner<B = DefaultBackend<StringId>, H = DefaultHashBuilder> =
+    string_interner::StringInterner<StringId, B, H>;
+
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -121,18 +128,7 @@ pub enum Value {
     /// To improve memory usage, we should separated string into 2 types, one that owns its
     /// character array and one that is "constant" such that it points to the original source
     /// or some non-freeable location.
-    String(String),
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::Nil => write!(f, "nil"),
-            Self::Bool(b) => write!(f, "{}", b),
-            Self::Number(n) => write!(f, "{}", n),
-            Self::String(s) => write!(f, "{}", s),
-        }
-    }
+    String(StringId),
 }
 
 impl Value {
@@ -162,6 +158,19 @@ impl Value {
             Self::Bool(b) => !b,
             Self::Nil => true,
             _ => false,
+        }
+    }
+
+    /// Get the string representation as this value.
+    pub fn as_string(&self, strings: &StringInterner) -> String {
+        match self {
+            Self::Nil => "nil".to_string(),
+            Self::Bool(b) => format!("{}", b),
+            Self::Number(n) => format!("{}", n),
+            Value::String(id) => strings
+                .resolve(*id)
+                .expect("String must be allocated before access.")
+                .to_string(),
         }
     }
 
@@ -201,6 +210,29 @@ impl Value {
         }
     }
 
+    /// Concatenate two strings.
+    ///
+    /// # Error
+    ///
+    /// If this value and the other value are not both numbers or both strings,
+    /// a runtime error is return
+    pub fn concat(&mut self, other: &Value, strings: &mut StringInterner) {
+        match (self, other) {
+            (Self::String(v1), Self::String(v2)) => {
+                let s1 = strings
+                    .resolve(*v1)
+                    .expect("String must be allocated before access.")
+                    .to_string();
+                let s2 = strings
+                    .resolve(*v2)
+                    .expect("String must be allocated before access.")
+                    .to_string();
+                *v1 = strings.get_or_intern(s1 + s2.as_str());
+            }
+            _ => panic!("Check values' type before applying the operation."),
+        }
+    }
+
     /// Add two values.
     ///
     /// # Error
@@ -212,7 +244,6 @@ impl Value {
             (Self::Number(v1), Self::Number(v2)) => {
                 *v1 += v2;
             }
-            (Self::String(v1), Self::String(v2)) => v1.push_str(&v2),
             _ => panic!("Check values' type before applying the operation."),
         }
     }
@@ -276,16 +307,16 @@ impl Value {
 
 /// Go through the instructions in the chunk and display them in human-readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
+pub fn disassemble_chunk(chunk: &Chunk, name: &str, strings: &StringInterner) {
     println!("== {} ==", name);
     for i in 0..chunk.instructions.len() {
-        disassemble_instruction(chunk, i);
+        disassemble_instruction(chunk, i, strings);
     }
 }
 
 /// Display an instruction in human readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
+pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringInterner) {
     print!("{:04} ", idx);
     if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
         print!("   | ");
@@ -294,9 +325,17 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
     }
 
     match chunk.instructions[idx] {
-        OpCode::Constant(ref idx) => {
-            println!("{:-16} {:4} {}", "OP_CONSTANT", idx, chunk.read_const(*idx))
-        }
+        OpCode::Constant(ref idx) => match chunk.read_const(*idx) {
+            Value::String(id) => println!(
+                "{:-16} {:4} {}",
+                "OP_CONSTANT",
+                idx,
+                strings
+                    .resolve(*id)
+                    .expect("String must be allocated before access.")
+            ),
+            val => println!("{:-16} {:4} {}", "OP_CONSTANT", idx, val.as_string(strings)),
+        },
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),
