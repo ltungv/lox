@@ -12,8 +12,8 @@ pub fn compile(src: &str) -> Option<(Chunk, StringInterner)> {
     while parser.peek().is_some() {
         if let Err(err) = parser.declaration() {
             eprintln!("{}", err);
+            parser.synchronize();
         }
-        // TODO: synchronize
     }
 
     if parser.had_scan_error {
@@ -73,14 +73,14 @@ impl<'a> Parser<'a> {
 
     fn print_statement(&mut self, tok: &Token) -> Result<(), ParseError> {
         self.expression()?;
-        self.consume(token::Type::Semicolon, "Expect ';' after value.")?;
+        self.consume(token::Type::Semicolon, "Expect ';' after value")?;
         self.chunk.write_instruction(OpCode::Print, tok.pos);
         Ok(())
     }
 
     fn expression_statement(&mut self) -> Result<(), ParseError> {
         self.expression()?;
-        self.consume(token::Type::Semicolon, "Expect ';' after value.")?;
+        self.consume(token::Type::Semicolon, "Expect ';' after value")?;
         self.chunk.write_instruction(OpCode::Pop, self.last_pos);
         Ok(())
     }
@@ -164,6 +164,29 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn synchronize(&mut self) {
+        while self.peek().is_some() {
+            let tok = self.advance().expect("We have peeked.");
+            if tok.typ == token::Type::Semicolon {
+                return;
+            }
+
+            if let Some(tok) = self.peek() {
+                match tok.typ {
+                    token::Type::Class
+                    | token::Type::Fun
+                    | token::Type::Var
+                    | token::Type::For
+                    | token::Type::If
+                    | token::Type::While
+                    | token::Type::Print
+                    | token::Type::Return => return,
+                    _ => {}
+                }
+            }
+        }
+    }
+
     fn advance(&mut self) -> Result<Token<'a>, ParseError> {
         while let Some(Err(err)) = self.tokens.peek() {
             eprintln!("{}", err);
@@ -210,12 +233,16 @@ impl<'a> Parser<'a> {
                 } else {
                     Err(ParseError::UnexpectedToken(
                         tok.pos,
-                        tok.lexeme.to_string(),
+                        Some(tok.lexeme.to_string()),
                         msg.to_string(),
                     ))
                 }
             }
-            None => Err(ParseError::UnexpectedEof),
+            None => Err(ParseError::UnexpectedToken(
+                self.last_pos,
+                None,
+                msg.to_string(),
+            )),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
         }
     }
@@ -229,7 +256,7 @@ impl<'a> Parser<'a> {
             token::Type::False | token::Type::Nil | token::Type::True => self.literal(tok),
             _ => Err(ParseError::UnexpectedToken(
                 tok.pos,
-                tok.lexeme.to_string(),
+                Some(tok.lexeme.to_string()),
                 "Expect expression".to_string(),
             )),
         }
@@ -249,7 +276,7 @@ impl<'a> Parser<'a> {
             | token::Type::LessEqual => self.binary(tok),
             _ => Err(ParseError::UnexpectedToken(
                 tok.pos,
-                tok.lexeme.to_string(),
+                Some(tok.lexeme.to_string()),
                 "Expect expression".to_string(),
             )),
         }

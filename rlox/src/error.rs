@@ -22,7 +22,7 @@ pub enum RuntimeError {
 #[derive(Debug)]
 pub enum ParseError {
     /// Current token is not supposed to be there
-    UnexpectedToken(Position, String, String),
+    UnexpectedToken(Position, Option<String>, String),
     /// Reached EOF abruptly
     UnexpectedEof,
 }
@@ -77,7 +77,11 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedToken(ref pos, ref lexeme, ref msg) => {
-                write!(f, "{} Error at '{}': {}.", pos, lexeme, msg,)
+                let at = match lexeme {
+                    Some(s) => format!("'{}'", s),
+                    None => "end".to_string(),
+                };
+                write!(f, "{} Error at {}: {}.", pos, at, msg)
             }
             Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
         }
