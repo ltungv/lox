@@ -1,6 +1,6 @@
 //! This module deals with chunks of bytecodes.
 
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 use crate::Position;
 

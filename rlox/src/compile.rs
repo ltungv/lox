@@ -1,8 +1,4 @@
-use std::{
-    convert::{From, Into},
-    fmt,
-    iter::Peekable,
-};
+use std::{fmt, iter::Peekable};
 
 use crate::{scan, token, Chunk, OpCode, Position, Scanner, Token, Value};
 
@@ -10,7 +6,7 @@ use crate::{scan, token, Chunk, OpCode, Position, Scanner, Token, Value};
 #[derive(Debug)]
 pub enum ParseError {
     /// Current token is not supposed to be there
-    UnexpectedToken(Token, String),
+    UnexpectedToken(Position, String, String),
     /// Reached EOF abruptly
     UnexpectedEof,
 }
@@ -18,8 +14,8 @@ impl std::error::Error for ParseError {}
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnexpectedToken(ref tok, ref msg) => {
-                write!(f, "{} Error at '{}': {}.", tok.pos, tok.lexeme, msg,)
+            Self::UnexpectedToken(ref pos, ref lexeme, ref msg) => {
+                write!(f, "{} Error at '{}': {}.", pos, lexeme, msg,)
             }
             Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
         }
@@ -34,7 +30,7 @@ pub fn compile(src: &str) -> Option<Chunk> {
     if let Err(err) = parser.expression() {
         eprintln!("{}", err);
     };
-    if parser.had_error {
+    if parser.had_scan_error {
         return None;
     }
     Some(chunk)
@@ -45,7 +41,7 @@ pub fn compile(src: &str) -> Option<Chunk> {
 pub struct Parser<'a> {
     chunk: &'a mut Chunk,
     tokens: Peekable<scan::Iter<'a>>,
-    had_error: bool,
+    had_scan_error: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -54,34 +50,22 @@ impl<'a> Parser<'a> {
         Self {
             chunk,
             tokens: Scanner::new(src).into_iter().peekable(),
-            had_error: false,
+            had_scan_error: false,
         }
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
-        let tok = self.peek().ok_or(ParseError::UnexpectedEof)?;
-        match Self::get_rule(&tok.typ).prefix {
-            None => {
-                self.had_error = true;
-                return Err(ParseError::UnexpectedToken(
-                    tok,
-                    "Expect expression".to_string(),
-                ));
-            }
-            Some(rule) => rule(self)?,
-        };
+        let tok = self.advance()?;
+        self.prefix_fule(&tok)?;
 
-        while let Some(tok) = self.peek() {
-            if precedence > Self::get_rule(&tok.typ).precedence {
-                break;
+        loop {
+            match self.peek() {
+                None => break,
+                Some(tok) if precedence > Precedence::of(&tok.typ) => break,
+                _ => {}
             }
-
-            if let Some(infix_rule) = Self::get_rule(&tok.typ).infix {
-                infix_rule(self)?;
-            } else {
-                self.had_error = true;
-                return Err(ParseError::UnexpectedToken(tok, "".to_string()));
-            }
+            let tok = self.advance()?;
+            self.infix_rule(&tok)?;
         }
         Ok(())
     }
@@ -90,88 +74,81 @@ impl<'a> Parser<'a> {
         self.parse_precedence(Precedence::Assignment)
     }
 
-    fn binary(&mut self) -> Result<(), ParseError> {
-        let operator = self.advance()?;
-        let rule = Self::get_rule(&operator.typ);
-        self.parse_precedence(rule.precedence.next())?;
-
+    fn binary(&mut self, operator: &Token) -> Result<(), ParseError> {
+        self.parse_precedence(Precedence::of(&operator.typ).next())?;
         match operator.typ {
             token::Type::BangEqual => {
-                self.emit(OpCode::Equal, operator.pos);
-                self.emit(OpCode::Not, operator.pos);
+                self.chunk.write_instruction(OpCode::Equal, operator.pos);
+                self.chunk.write_instruction(OpCode::Not, operator.pos);
             }
-            token::Type::EqualEqual => self.emit(OpCode::Equal, operator.pos),
-            token::Type::Greater => self.emit(OpCode::Greater, operator.pos),
+            token::Type::EqualEqual => self.chunk.write_instruction(OpCode::Equal, operator.pos),
+            token::Type::Greater => self.chunk.write_instruction(OpCode::Greater, operator.pos),
             token::Type::GreaterEqual => {
-                self.emit(OpCode::Less, operator.pos);
-                self.emit(OpCode::Not, operator.pos);
+                self.chunk.write_instruction(OpCode::Less, operator.pos);
+                self.chunk.write_instruction(OpCode::Not, operator.pos);
             }
-            token::Type::Less => self.emit(OpCode::Less, operator.pos),
+            token::Type::Less => self.chunk.write_instruction(OpCode::Less, operator.pos),
             token::Type::LessEqual => {
-                self.emit(OpCode::Greater, operator.pos);
-                self.emit(OpCode::Not, operator.pos);
+                self.chunk.write_instruction(OpCode::Greater, operator.pos);
+                self.chunk.write_instruction(OpCode::Not, operator.pos);
             }
-            token::Type::Plus => self.emit(OpCode::Add, operator.pos),
-            token::Type::Minus => self.emit(OpCode::Subtract, operator.pos),
-            token::Type::Star => self.emit(OpCode::Multiply, operator.pos),
-            token::Type::Slash => self.emit(OpCode::Divide, operator.pos),
+            token::Type::Plus => self.chunk.write_instruction(OpCode::Add, operator.pos),
+            token::Type::Minus => self.chunk.write_instruction(OpCode::Subtract, operator.pos),
+            token::Type::Star => self.chunk.write_instruction(OpCode::Multiply, operator.pos),
+            token::Type::Slash => self.chunk.write_instruction(OpCode::Divide, operator.pos),
             _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
 
-    fn unary(&mut self) -> Result<(), ParseError> {
-        let operator = self.advance()?;
+    fn unary(&mut self, operator: &Token) -> Result<(), ParseError> {
         self.parse_precedence(Precedence::Unary)?;
         match operator.typ {
-            token::Type::Bang => self.emit(OpCode::Not, operator.pos),
-            token::Type::Minus => self.emit(OpCode::Negate, operator.pos),
+            token::Type::Bang => self.chunk.write_instruction(OpCode::Not, operator.pos),
+            token::Type::Minus => self.chunk.write_instruction(OpCode::Negate, operator.pos),
             _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
 
     fn grouping(&mut self) -> Result<(), ParseError> {
-        self.consume(token::Type::LParen, "Unexpected token.")?;
         self.expression()?;
         self.consume(token::Type::RParen, "Expect ')' after expression")
     }
 
-    fn literal(&mut self) -> Result<(), ParseError> {
-        let tok = self.advance()?;
+    fn literal(&mut self, tok: &Token) -> Result<(), ParseError> {
         match tok.typ {
-            token::Type::False => self.emit(OpCode::False, tok.pos),
-            token::Type::Nil => self.emit(OpCode::Nil, tok.pos),
-            token::Type::True => self.emit(OpCode::True, tok.pos),
+            token::Type::False => self.chunk.write_instruction(OpCode::False, tok.pos),
+            token::Type::Nil => self.chunk.write_instruction(OpCode::Nil, tok.pos),
+            token::Type::True => self.chunk.write_instruction(OpCode::True, tok.pos),
             _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
 
-    fn string(&mut self) -> Result<(), ParseError> {
-        let tok = self.advance()?;
+    fn string(&mut self, tok: &Token) -> Result<(), ParseError> {
         assert_eq!(tok.typ, token::Type::String);
-
         let value = tok.lexeme[1..tok.lexeme.len() - 1].to_string();
         let constant = self.chunk.write_const(Value::String(value));
-        self.emit(OpCode::Constant(constant), tok.pos);
+        self.chunk
+            .write_instruction(OpCode::Constant(constant), tok.pos);
         Ok(())
     }
 
-    fn number(&mut self) -> Result<(), ParseError> {
-        let tok = self.advance()?;
+    fn number(&mut self, tok: &Token) -> Result<(), ParseError> {
         assert_eq!(tok.typ, token::Type::Number);
-
         let value = tok.lexeme.parse().unwrap();
         let constant = self.chunk.write_const(Value::Number(value));
-        self.emit(OpCode::Constant(constant), tok.pos);
+        self.chunk
+            .write_instruction(OpCode::Constant(constant), tok.pos);
         Ok(())
     }
 
-    fn advance(&mut self) -> Result<Token, ParseError> {
+    fn advance(&mut self) -> Result<Token<'a>, ParseError> {
         while let Some(Err(err)) = self.tokens.peek() {
             eprintln!("{}", err);
-            self.had_error = true;
+            self.had_scan_error = true;
+            self.tokens.next();
         }
         self.tokens
             .next()
@@ -179,14 +156,15 @@ impl<'a> Parser<'a> {
             .ok_or(ParseError::UnexpectedEof)
     }
 
-    fn peek(&mut self) -> Option<Token> {
+    fn peek(&mut self) -> Option<&Token> {
         while let Some(Err(err)) = self.tokens.peek() {
             eprintln!("{}", err);
-            self.had_error = true;
+            self.had_scan_error = true;
+            self.tokens.next();
         }
         self.tokens.peek().map(|peeked| match peeked {
             Err(_) => unreachable!("Errors should have been skipped."),
-            Ok(tok) => tok.clone(),
+            Ok(tok) => tok,
         })
     }
 
@@ -197,84 +175,50 @@ impl<'a> Parser<'a> {
                     self.advance()?;
                     Ok(())
                 } else {
-                    self.had_error = true;
-                    Err(ParseError::UnexpectedToken(tok.clone(), msg.to_string()))
+                    Err(ParseError::UnexpectedToken(
+                        tok.pos,
+                        tok.lexeme.to_string(),
+                        msg.to_string(),
+                    ))
                 }
             }
-            None => {
-                self.had_error = true;
-                Err(ParseError::UnexpectedEof)
-            }
+            None => Err(ParseError::UnexpectedEof),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
         }
     }
 
-    fn emit(&mut self, code: OpCode, pos: Position) {
-        self.chunk.write_instruction(code, pos);
+    fn prefix_fule(&mut self, tok: &Token) -> Result<(), ParseError> {
+        match tok.typ {
+            token::Type::LParen => self.grouping(),
+            token::Type::Minus | token::Type::Bang => self.unary(tok),
+            token::Type::String => self.string(tok),
+            token::Type::Number => self.number(tok),
+            token::Type::False | token::Type::Nil | token::Type::True => self.literal(tok),
+            _ => Err(ParseError::UnexpectedToken(
+                tok.pos,
+                tok.lexeme.to_string(),
+                "Expect expression".to_string(),
+            )),
+        }
     }
 
-    fn get_rule(typ: &token::Type) -> ParseRule<'a> {
-        let rule: (Precedence, Option<ParseFn<'a>>, Option<ParseFn<'a>>) = match typ {
-            token::Type::LParen => (Precedence::None, Some(Self::grouping), None),
-            token::Type::RParen => (Precedence::None, None, None),
-            token::Type::LBrace => (Precedence::None, None, None),
-            token::Type::RBrace => (Precedence::None, None, None),
-            token::Type::Comma => (Precedence::None, None, None),
-            token::Type::Dot => (Precedence::None, None, None),
-            token::Type::Minus => (Precedence::Term, Some(Self::unary), Some(Self::binary)),
-            token::Type::Plus => (Precedence::Term, None, Some(Self::binary)),
-            token::Type::Semicolon => (Precedence::None, None, None),
-            token::Type::Slash => (Precedence::Factor, None, Some(Self::binary)),
-            token::Type::Star => (Precedence::Factor, None, Some(Self::binary)),
-            token::Type::Bang => (Precedence::None, Some(Self::unary), None),
-            token::Type::BangEqual => (Precedence::Equality, None, Some(Self::binary)),
-            token::Type::Equal => (Precedence::None, None, None),
-            token::Type::EqualEqual => (Precedence::Equality, None, Some(Self::binary)),
-            token::Type::Greater => (Precedence::Comparison, None, Some(Self::binary)),
-            token::Type::GreaterEqual => (Precedence::Comparison, None, Some(Self::binary)),
-            token::Type::Less => (Precedence::Comparison, None, Some(Self::binary)),
-            token::Type::LessEqual => (Precedence::Comparison, None, Some(Self::binary)),
-            token::Type::Ident => (Precedence::None, None, None),
-            token::Type::String => (Precedence::None, Some(Self::string), None),
-            token::Type::Number => (Precedence::None, Some(Self::number), None),
-            token::Type::And => (Precedence::None, None, None),
-            token::Type::Class => (Precedence::None, None, None),
-            token::Type::Else => (Precedence::None, None, None),
-            token::Type::False => (Precedence::None, Some(Self::literal), None),
-            token::Type::For => (Precedence::None, None, None),
-            token::Type::Fun => (Precedence::None, None, None),
-            token::Type::If => (Precedence::None, None, None),
-            token::Type::Nil => (Precedence::None, Some(Self::literal), None),
-            token::Type::Or => (Precedence::None, None, None),
-            token::Type::Print => (Precedence::None, None, None),
-            token::Type::Return => (Precedence::None, None, None),
-            token::Type::Super => (Precedence::None, None, None),
-            token::Type::This => (Precedence::None, None, None),
-            token::Type::True => (Precedence::None, Some(Self::literal), None),
-            token::Type::Var => (Precedence::None, None, None),
-            token::Type::While => (Precedence::None, None, None),
-            token::Type::Eof => (Precedence::None, None, None),
-        };
-        rule.into()
-    }
-}
-
-type ParseFn<'a> = fn(&mut Parser<'a>) -> Result<(), ParseError>;
-
-struct ParseRule<'a> {
-    precedence: Precedence,
-    prefix: Option<ParseFn<'a>>,
-    infix: Option<ParseFn<'a>>,
-}
-
-impl<'a> From<(Precedence, Option<ParseFn<'a>>, Option<ParseFn<'a>>)> for ParseRule<'a> {
-    fn from(
-        (precedence, prefix, infix): (Precedence, Option<ParseFn<'a>>, Option<ParseFn<'a>>),
-    ) -> Self {
-        Self {
-            precedence,
-            prefix,
-            infix,
+    fn infix_rule(&mut self, tok: &Token) -> Result<(), ParseError> {
+        match tok.typ {
+            token::Type::Minus
+            | token::Type::Plus
+            | token::Type::Slash
+            | token::Type::Star
+            | token::Type::BangEqual
+            | token::Type::EqualEqual
+            | token::Type::Greater
+            | token::Type::GreaterEqual
+            | token::Type::Less
+            | token::Type::LessEqual => self.binary(tok),
+            _ => Err(ParseError::UnexpectedToken(
+                tok.pos,
+                tok.lexeme.to_string(),
+                "Expect expression".to_string(),
+            )),
         }
     }
 }
@@ -321,6 +265,19 @@ impl Precedence {
             Self::Unary => Self::Call,
             Self::Call => Self::Primary,
             Self::Primary => Self::Primary,
+        }
+    }
+
+    fn of(typ: &token::Type) -> Self {
+        match typ {
+            token::Type::Greater
+            | token::Type::GreaterEqual
+            | token::Type::Less
+            | token::Type::LessEqual => Precedence::Comparison,
+            token::Type::Minus | token::Type::Plus => (Precedence::Term),
+            token::Type::Slash | token::Type::Star => (Precedence::Factor),
+            token::Type::Bang | token::Type::BangEqual => (Precedence::Equality),
+            _ => Self::None,
         }
     }
 }

@@ -29,35 +29,32 @@ impl fmt::Display for ScanError {
 
 /// Scanner reads characters from the source code and groups them in to a sequence of tokens.
 #[derive(Debug)]
-pub struct Scanner<'a> {
-    src: MultiPeek<Chars<'a>>,
-    lexeme: String,
+pub struct Scanner<'s> {
+    src: &'s str,
+    src_iter: MultiPeek<Chars<'s>>,
     pos: Position,
+
+    lexeme_begin: usize,
+    lexeme_end: usize,
 }
 
-impl<'a> IntoIterator for Scanner<'a> {
-    type Item = Result<Token, ScanError>;
-    type IntoIter = Iter<'a>;
-    fn into_iter(self) -> Self::IntoIter {
-        Iter { scanner: self }
-    }
-}
-
-impl<'a> Scanner<'a> {
+impl<'s> Scanner<'s> {
     /// Create a new scanner
-    pub fn new(src: &'a str) -> Self {
-        let src = itertools::multipeek(src.chars());
+    pub fn new(src: &'s str) -> Self {
+        let src_iter = itertools::multipeek(src.chars());
         Self {
             src,
-            lexeme: String::new(),
+            src_iter,
+            lexeme_begin: 0,
+            lexeme_end: 0,
             pos: Default::default(),
         }
     }
 
     /// Consume and return the next token from source.
-    pub fn scan(&mut self) -> Result<Option<Token>, ScanError> {
+    pub fn scan(&mut self) -> Result<Option<Token<'s>>, ScanError> {
         self.skip_whitespace();
-        self.lexeme.clear();
+        self.lexeme_begin = self.lexeme_end;
         let c = match self.advance() {
             None => return Ok(None),
             Some(c) => c,
@@ -112,11 +109,11 @@ impl<'a> Scanner<'a> {
         }))
     }
 
-    fn identity(&mut self) -> Token {
+    fn identity(&mut self) -> Token<'s> {
         while self.peek_check(|c| is_alpha(c) || is_digit(c)) {
             self.advance();
         }
-        self.make_token(match self.lexeme.as_ref() {
+        self.make_token(match &self.src[self.lexeme_begin..self.lexeme_end] {
             "and" => token::Type::And,
             "class" => token::Type::Class,
             "else" => token::Type::Else,
@@ -137,7 +134,7 @@ impl<'a> Scanner<'a> {
         })
     }
 
-    fn number(&mut self) -> Token {
+    fn number(&mut self) -> Token<'s> {
         while self.peek_check(is_digit) {
             self.advance();
         }
@@ -150,7 +147,7 @@ impl<'a> Scanner<'a> {
         self.make_token(token::Type::Number)
     }
 
-    fn string(&mut self) -> Result<Token, ScanError> {
+    fn string(&mut self) -> Result<Token<'s>, ScanError> {
         while self.peek_check(|c| c != '"') {
             self.advance();
         }
@@ -189,21 +186,21 @@ impl<'a> Scanner<'a> {
     }
 
     fn peek(&mut self) -> Option<char> {
-        self.src.reset_peek();
-        self.src.peek().copied()
+        self.src_iter.reset_peek();
+        self.src_iter.peek().copied()
     }
 
     fn peek_next(&mut self) -> Option<char> {
-        self.src.reset_peek();
-        match self.src.peek() {
+        self.src_iter.reset_peek();
+        match self.src_iter.peek() {
             None => None,
-            Some(_) => self.src.peek().copied(),
+            Some(_) => self.src_iter.peek().copied(),
         }
     }
 
     fn advance(&mut self) -> Option<char> {
-        self.src.next().map(|c| {
-            self.lexeme.push(c);
+        self.src_iter.next().map(|c| {
+            self.lexeme_end += 1;
             if c == '\n' {
                 self.pos.next_line();
             } else {
@@ -224,23 +221,31 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn make_token(&mut self, typ: token::Type) -> Token {
+    fn make_token(&mut self, typ: token::Type) -> Token<'s> {
         Token {
             typ,
-            lexeme: self.lexeme.drain(..).collect(),
+            lexeme: &self.src[self.lexeme_begin..self.lexeme_end],
             pos: self.pos,
         }
     }
 }
 
-/// An interator for the tokens scanner
-#[derive(Debug)]
-pub struct Iter<'a> {
-    scanner: Scanner<'a>,
+impl<'s> IntoIterator for Scanner<'s> {
+    type Item = Result<Token<'s>, ScanError>;
+    type IntoIter = Iter<'s>;
+    fn into_iter(self) -> Self::IntoIter {
+        Iter { scanner: self }
+    }
 }
 
-impl<'a> Iterator for Iter<'a> {
-    type Item = Result<Token, ScanError>;
+/// An interator for the tokens scanner
+#[derive(Debug)]
+pub struct Iter<'s> {
+    scanner: Scanner<'s>,
+}
+
+impl<'s> Iterator for Iter<'s> {
+    type Item = Result<Token<'s>, ScanError>;
     fn next(&mut self) -> Option<Self::Item> {
         self.scanner.scan().transpose()
     }
