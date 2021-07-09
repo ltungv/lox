@@ -9,9 +9,12 @@ pub fn compile(src: &str) -> Option<(Chunk, StringInterner)> {
     let mut strings = StringInterner::default();
 
     let mut parser = Parser::new(&mut chunk, &mut strings, src);
-    if let Err(err) = parser.expression() {
-        eprintln!("{}", err);
-    };
+    while parser.peek().is_some() {
+        if let Err(err) = parser.declaration() {
+            eprintln!("{}", err);
+        }
+        // TODO: synchronize
+    }
 
     if parser.had_scan_error {
         return None;
@@ -52,6 +55,24 @@ impl<'a> Parser<'a> {
             let tok = self.advance()?;
             self.infix_rule(&tok)?;
         }
+        Ok(())
+    }
+
+    fn declaration(&mut self) -> Result<(), ParseError> {
+        self.statement()
+    }
+
+    fn statement(&mut self) -> Result<(), ParseError> {
+        if let Some(tok) = self.advance_when(token::Type::Print) {
+            return self.print_statement(&tok);
+        }
+        Ok(())
+    }
+
+    fn print_statement(&mut self, tok: &Token) -> Result<(), ParseError> {
+        self.expression()?;
+        self.consume(token::Type::Semicolon, "Expect ';' after value.")?;
+        self.chunk.write_instruction(OpCode::Print, tok.pos);
         Ok(())
     }
 
@@ -144,6 +165,15 @@ impl<'a> Parser<'a> {
             .next()
             .map(|t| t.expect("All errors have been skipped."))
             .ok_or(ParseError::UnexpectedEof)
+    }
+
+    fn advance_when(&mut self, typ: token::Type) -> Option<Token<'a>> {
+        if let Some(tok) = self.peek() {
+            if tok.typ == typ {
+                return Some(self.advance().expect("We have peeked."));
+            }
+        }
+        None
     }
 
     fn peek(&mut self) -> Option<&Token> {
@@ -355,6 +385,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),
+        OpCode::Print => println!("OP_PRINT"),
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Not => println!("OP_NOT"),
         OpCode::Negate => println!("OP_NEGATE"),

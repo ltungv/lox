@@ -1,7 +1,7 @@
-use crate::{
-    compile, disassemble_chunk, disassemble_instruction, Chunk, Error, OpCode, Position,
-    RuntimeError, StringInterner, Value,
-};
+use crate::{compile, Chunk, Error, OpCode, Position, RuntimeError, StringInterner, Value};
+
+#[cfg(debug_assertions)]
+use crate::{disassemble_chunk, disassemble_instruction};
 
 /// We're limiting the stack's size to be in specification with clox
 pub const MAX_STACK_SIZE: usize = 256;
@@ -35,13 +35,15 @@ impl VM {
 
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self, chunk: &Chunk, strings: &mut StringInterner) -> Result<(), RuntimeError> {
-        if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             disassemble_chunk(&chunk, "code", strings);
             print!("\n\n== execution ==");
         }
 
         loop {
-            if cfg!(debug_assertions) {
+            #[cfg(debug_assertions)]
+            {
                 print_stack_trace(&self.stack, strings);
                 disassemble_instruction(&chunk, self.ip, strings);
             }
@@ -56,9 +58,12 @@ impl VM {
                 OpCode::Nil => self.push(Value::Nil)?,
                 OpCode::True => self.push(Value::Bool(true))?,
                 OpCode::False => self.push(Value::Bool(false))?,
-                OpCode::Return => {
+                OpCode::Print => {
                     let v = self.pop()?;
                     println!("{}", v.as_string(strings));
+                }
+                OpCode::Return => {
+                    // exit the interpreter
                     return Ok(());
                 }
                 OpCode::Not => {

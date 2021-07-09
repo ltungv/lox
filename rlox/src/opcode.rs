@@ -26,6 +26,8 @@ pub enum OpCode {
     True,
     /// Load a `false` value
     False,
+    /// Print the expression on top of the stack
+    Print,
     /// Return from the current function
     Return,
     /// Apply logical `not` to a single boolean operand
