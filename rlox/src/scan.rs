@@ -27,8 +27,7 @@ impl fmt::Display for ScanError {
     }
 }
 
-/// Scanner reads characters from the source code and groups them in to
-/// a sequence of tokens.
+/// Scanner reads characters from the source code and groups them in to a sequence of tokens.
 #[derive(Debug)]
 pub struct Scanner<'a> {
     src: MultiPeek<Chars<'a>>,
