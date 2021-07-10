@@ -16,6 +16,8 @@ pub enum RuntimeError {
     BinaryNumberOperands(Position),
     /// Wrong arguments given to unary operators that only accept a numbers
     UnaryNumberOperand(Position),
+    /// Accessing an undefined variable
+    UndefinedVariable(Position, String),
 }
 
 /// Error while parsing Lox tokens
@@ -48,7 +50,7 @@ pub enum Error {
 impl std::error::Error for RuntimeError {}
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match *self {
+        match self {
             Self::StackOverflow => {
                 writeln!(f, "Virtual machine's stack overflows.")
             }
@@ -67,6 +69,9 @@ impl fmt::Display for RuntimeError {
             }
             Self::UnaryNumberOperand(p) => {
                 writeln!(f, "Operand must be a number.\n{} in script.", p)
+            }
+            Self::UndefinedVariable(p, name) => {
+                writeln!(f, "Undefined variable '{}'.\n{} in script.", name, p)
             }
         }
     }

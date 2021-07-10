@@ -8,7 +8,7 @@ use crate::{
 use crate::{disassemble_chunk, disassemble_instruction};
 
 /// We're limiting the stack's size to be in specification with clox
-pub const MAX_STACK_SIZE: usize = 256;
+const MAX_STACK_SIZE: usize = 256;
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug)]
@@ -16,6 +16,7 @@ pub struct VM {
     ip: usize,
     stack: Vec<Value>,
     globals: HashMap<StringId, Value>,
+    strings: StringInterner,
 }
 
 impl Default for VM {
@@ -23,7 +24,8 @@ impl Default for VM {
         Self {
             ip: 0,
             stack: Vec::with_capacity(MAX_STACK_SIZE),
-            globals: HashMap::new(),
+            globals: HashMap::default(),
+            strings: StringInterner::default(),
         }
     }
 }
@@ -31,27 +33,24 @@ impl Default for VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let (mut chunk, mut strings) = compile(src).ok_or(Error::Compile)?;
+        let mut chunk = compile(src, &mut self.strings).ok_or(Error::Compile)?;
         chunk.write_instruction(OpCode::Return, Position::default());
 
+        #[cfg(debug_assertions)]
+        disassemble_chunk(&chunk, "code", &self.strings);
+
         self.ip = 0;
-        self.run(&chunk, &mut strings)?;
+        self.run(&chunk)?;
         Ok(())
     }
 
     /// Run the virtual machine with it currently given chunk.
-    fn run(&mut self, chunk: &Chunk, strings: &mut StringInterner) -> Result<(), RuntimeError> {
-        #[cfg(debug_assertions)]
-        {
-            disassemble_chunk(&chunk, "code", strings);
-            print!("\n\n== execution ==");
-        }
-
+    fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
         loop {
             #[cfg(debug_assertions)]
             {
-                print_stack_trace(&self.stack, strings);
-                disassemble_instruction(&chunk, self.ip, strings);
+                print_stack_trace(&self.stack, &self.strings);
+                disassemble_instruction(&chunk, self.ip, &self.strings);
             }
 
             let (opcode, pos) = chunk.read_instruction(self.ip);
@@ -60,22 +59,43 @@ impl VM {
                 OpCode::Pop => {
                     self.pop()?;
                 }
-                OpCode::DefineGlobal(ref idx) => {
-                    let name = chunk.read_const(*idx);
-                    if let Value::String(name) = name {
-                        let val = self.pop()?;
-                        self.globals.insert(*name, val.clone());
-                    } else {
-                        unreachable!("Constant for the variable name must have been added.");
-                    }
-                }
                 OpCode::Print => {
                     let v = self.pop()?;
-                    println!("{}", v.as_string(strings));
+                    println!("{}", v.as_string(&self.strings));
                 }
                 OpCode::Return => {
                     // exit the interpreter
                     return Ok(());
+                }
+                OpCode::DefineGlobal(ref idx) => {
+                    let name = chunk.read_const(*idx);
+                    if let Value::String(name) = name {
+                        let val = self.peek(0)?.clone();
+                        self.globals.insert(*name, val);
+                        self.pop()?;
+                    } else {
+                        unreachable!("Constant for the variable name must have been added.");
+                    }
+                }
+                OpCode::GetGlobal(ref idx) => {
+                    let name = chunk.read_const(*idx);
+                    if let Value::String(name) = name {
+                        let val = self
+                            .globals
+                            .get(name)
+                            .ok_or_else(|| {
+                                let name = self
+                                    .strings
+                                    .resolve(*name)
+                                    .expect("String for variable name must have been allocated.")
+                                    .to_string();
+                                RuntimeError::UndefinedVariable(*pos, name)
+                            })?
+                            .clone();
+                        self.push(val)?;
+                    } else {
+                        unreachable!("Constant for the variable name must have been added.");
+                    }
                 }
                 OpCode::Constant(ref idx) => {
                     let val = chunk.read_const(*idx);
@@ -85,134 +105,86 @@ impl VM {
                 OpCode::True => self.push(Value::Bool(true))?,
                 OpCode::False => self.push(Value::Bool(false))?,
                 OpCode::Not => {
-                    self.apply_unary_op(
-                        pos,
-                        |v| {
-                            *v = Value::Bool(v.is_falsey());
-                        },
-                        |_| true,
-                        |_| unreachable!("There's no type checking"),
-                    )?;
+                    let v = self.peek_mut(0)?;
+                    *v = Value::Bool(v.is_falsey());
                 }
-                OpCode::Negate => {
-                    self.apply_unary_op(
-                        pos,
-                        Value::negate,
-                        Value::is_number,
-                        RuntimeError::UnaryNumberOperand,
-                    )?;
-                }
+                OpCode::Negate => match self.peek_mut(0)? {
+                    Value::Number(v) => {
+                        *v = -*v;
+                    }
+                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                },
                 OpCode::Equal => {
-                    self.apply_binary_op(
-                        pos,
-                        |v1, v2| {
-                            *v1 = Value::Bool(v1.equal(v2));
-                        },
-                        |_| true,
-                        |_| unreachable!("There's no type checking"),
-                    )?;
+                    let v2 = self.pop()?;
+                    let v1 = self.peek_mut(0)?;
+                    *v1 = Value::Bool(v1.equal(&v2));
                 }
-                OpCode::Greater => {
-                    self.apply_binary_op(
-                        pos,
-                        |v1, v2| {
-                            *v1 = Value::Bool(v1.greater(v2));
-                        },
-                        Value::is_number,
-                        RuntimeError::BinaryNumberOperands,
-                    )?;
-                }
-                OpCode::Less => {
-                    self.apply_binary_op(
-                        pos,
-                        |v1, v2| {
-                            *v1 = Value::Bool(v1.less(v2));
-                        },
-                        Value::is_number,
-                        RuntimeError::BinaryNumberOperands,
-                    )?;
-                }
-                OpCode::Add => {
-                    self.apply_binary_op(
-                        pos,
-                        Value::add,
-                        |v| v.is_number(),
-                        RuntimeError::InvalidAddOperands,
-                    )
-                    .or_else(|_| {
-                        self.apply_binary_op(
-                            pos,
-                            |v1, v2| v1.concat(v2, strings),
-                            |v| v.is_string(),
-                            RuntimeError::InvalidAddOperands,
-                        )
-                    })?;
-                }
-                OpCode::Subtract => {
-                    self.apply_binary_op(
-                        pos,
-                        Value::subtract,
-                        Value::is_number,
-                        RuntimeError::BinaryNumberOperands,
-                    )?;
-                }
-                OpCode::Multiply => {
-                    self.apply_binary_op(
-                        pos,
-                        Value::multiply,
-                        Value::is_number,
-                        RuntimeError::BinaryNumberOperands,
-                    )?;
-                }
-                OpCode::Divide => {
-                    self.apply_binary_op(
-                        pos,
-                        Value::divide,
-                        Value::is_number,
-                        RuntimeError::BinaryNumberOperands,
-                    )?;
-                }
+                OpCode::Greater => match (self.peek(0)?, self.peek(1)?) {
+                    (&Value::Number(n2), &Value::Number(n1)) => {
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::Bool(n1 > n2);
+                    }
+                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                },
+                OpCode::Less => match (self.peek(0)?, self.peek(1)?) {
+                    (&Value::Number(n2), &Value::Number(n1)) => {
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::Bool(n1 < n2);
+                    }
+                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                },
+                OpCode::Add => match (self.peek(0)?, self.peek(1)?) {
+                    (&Value::Number(n2), &Value::Number(n1)) => {
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::Number(n1 + n2);
+                    }
+                    (&Value::String(s2), &Value::String(s1)) => {
+                        let mut res = String::new();
+                        res += self
+                            .strings
+                            .resolve(s1)
+                            .expect("String must be allocated before access.");
+                        res += self
+                            .strings
+                            .resolve(s2)
+                            .expect("String must be allocated before access.");
+                        let res_id = self.strings.get_or_intern(res);
+
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::String(res_id);
+                    }
+                    _ => return Err(RuntimeError::InvalidAddOperands(*pos)),
+                },
+                OpCode::Subtract => match (self.peek(0)?, self.peek(1)?) {
+                    (&Value::Number(n2), &Value::Number(n1)) => {
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::Number(n1 - n2);
+                    }
+                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                },
+                OpCode::Multiply => match (self.peek(0)?, self.peek(1)?) {
+                    (&Value::Number(n2), &Value::Number(n1)) => {
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::Number(n1 * n2);
+                    }
+                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                },
+                OpCode::Divide => match (self.peek(0)?, self.peek(1)?) {
+                    (&Value::Number(n2), &Value::Number(n1)) => {
+                        self.pop()?;
+                        let v1 = self.peek_mut(0)?;
+                        *v1 = Value::Number(n1 / n2);
+                    }
+                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                },
             }
         }
-    }
-
-    fn apply_unary_op<
-        F: FnMut(&mut Value),
-        P: Fn(&Value) -> bool,
-        E: Fn(Position) -> RuntimeError,
-    >(
-        &mut self,
-        pos: &Position,
-        mut op: F,
-        check: P,
-        err: E,
-    ) -> Result<(), RuntimeError> {
-        let v = self.peek_mut(0)?;
-        if !check(v) {
-            return Err(err(*pos));
-        }
-        op(v);
-        Ok(())
-    }
-
-    fn apply_binary_op<
-        F: FnMut(&mut Value, &Value),
-        P: Fn(&Value) -> bool,
-        E: Fn(Position) -> RuntimeError,
-    >(
-        &mut self,
-        pos: &Position,
-        mut op: F,
-        check: P,
-        err: E,
-    ) -> Result<(), RuntimeError> {
-        if !check(self.peek(0)?) || !check(self.peek(1)?) {
-            return Err(err(*pos));
-        }
-        let v2 = self.pop()?;
-        let v1 = self.peek_mut(0)?;
-        op(v1, &v2);
-        Ok(())
     }
 
     fn peek(&self, steps: usize) -> Result<&Value, RuntimeError> {

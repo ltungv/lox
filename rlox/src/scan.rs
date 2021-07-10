@@ -32,7 +32,7 @@ impl<'s> Scanner<'s> {
     }
 
     /// Consume and return the next token from source.
-    pub fn scan(&mut self) -> Result<Option<Token<'s>>, ScanError> {
+    fn scan(&mut self) -> Result<Option<Token<'s>>, ScanError> {
         self.skip_whitespace();
         self.lexeme_begin = self.lexeme_end;
         let c = match self.advance() {
