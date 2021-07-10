@@ -14,6 +14,7 @@ pub struct Scanner<'s> {
     src_iter: MultiPeek<Chars<'s>>,
     pos: Position,
 
+    finished: bool,
     lexeme_begin: usize,
     lexeme_end: usize,
 }
@@ -25,18 +26,31 @@ impl<'s> Scanner<'s> {
         Self {
             src,
             src_iter,
+            pos: Default::default(),
+            finished: false,
             lexeme_begin: 0,
             lexeme_end: 0,
-            pos: Default::default(),
         }
     }
 
     /// Consume and return the next token from source.
     fn scan(&mut self) -> Result<Option<Token<'s>>, ScanError> {
+        if self.finished {
+            return Ok(None);
+        }
+
         self.skip_whitespace();
         self.lexeme_begin = self.lexeme_end;
         let c = match self.advance() {
-            None => return Ok(None),
+            None => {
+                self.pos.next_column();
+                self.finished = true;
+                return Ok(Some(Token {
+                    typ: token::Type::Eof,
+                    lexeme: "",
+                    pos: self.pos,
+                }));
+            }
             Some(c) => c,
         };
 

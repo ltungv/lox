@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Result<(), ParseError> {
-        if self.consume(token::Type::Var, "").is_ok() {
+        if self.advance_if(token::Type::Var)? {
             return self.var_declaration();
         }
         self.statement()
@@ -114,7 +114,7 @@ impl<'a> Parser<'a> {
             .chunk
             .write_const(Value::String(self.strings.get_or_intern(ident.lexeme)));
         // initializer
-        if self.consume(token::Type::Equal, "").is_ok() {
+        if self.advance_if(token::Type::Equal)? {
             self.expression()?;
         } else {
             self.emit(OpCode::Nil);
@@ -130,7 +130,7 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
-        if self.consume(token::Type::Print, "").is_ok() {
+        if self.advance_if(token::Type::Print)? {
             return self.print_statement();
         }
         self.expression_statement()
@@ -195,7 +195,7 @@ impl<'a> Parser<'a> {
             .chunk
             .write_const(Value::String(self.strings.get_or_intern(self.prev_lexeme)));
 
-        if can_assign && self.consume(token::Type::Equal, "").is_ok() {
+        if can_assign && self.advance_if(token::Type::Equal)? {
             self.expression()?;
             self.emit(OpCode::SetGlobal(ident_id));
         } else {
@@ -251,7 +251,7 @@ impl<'a> Parser<'a> {
             self.infix_rule(tok.typ)?;
         }
 
-        if can_assign && self.consume(token::Type::Equal, "").is_ok() {
+        if can_assign && self.advance_if(token::Type::Equal)? {
             return Err(ParseError::InvalidAssignTarget(
                 self.prev_position,
                 self.prev_lexeme.to_string(),
@@ -302,7 +302,7 @@ impl<'a> Parser<'a> {
     fn synchronize(&mut self) {
         while self.peek().is_some() {
             let tok = self.advance().expect("We have peeked.");
-            if tok.typ == token::Type::Semicolon {
+            if tok.typ == token::Type::Eof || tok.typ == token::Type::Semicolon {
                 return;
             }
 
@@ -349,6 +349,16 @@ impl<'a> Parser<'a> {
                 tok
             })
             .ok_or(ParseError::UnexpectedEof)
+    }
+
+    fn advance_if(&mut self, typ: token::Type) -> Result<bool, ParseError> {
+        if let Some(Ok(tok)) = self.tokens.peek() {
+            if tok.typ == typ {
+                self.advance()?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn consume(&mut self, typ: token::Type, msg: &str) -> Result<Token<'a>, ParseError> {
