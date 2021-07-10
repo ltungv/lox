@@ -68,8 +68,7 @@ struct Parser<'a> {
     chunk: &'a mut Chunk,
     strings: &'a mut StringInterner,
     tokens: Peekable<scan::Iter<'a>>,
-    prev_position: Position,
-    prev_lexeme: &'a str,
+    prev_token: Token<'a>,
     had_error: bool,
 }
 
@@ -80,14 +79,21 @@ impl<'a> Parser<'a> {
             chunk,
             strings,
             tokens: Scanner::new(src).into_iter().peekable(),
-            prev_position: Position::default(),
-            prev_lexeme: "",
+            prev_token: Token {
+                typ: token::Type::Eof,
+                lexeme: "",
+                pos: Position::default(),
+            },
             had_error: false,
         }
     }
 
     fn parse(&mut self) {
-        while self.peek().is_some() {
+        while let Some(tok) = self.peek() {
+            if tok.typ == token::Type::Eof {
+                return;
+            }
+
             if let Err(err) = self.declaration() {
                 eprintln!("{}", err);
                 self.had_error = true;
@@ -97,7 +103,7 @@ impl<'a> Parser<'a> {
     }
 
     fn emit(&mut self, op: OpCode) {
-        self.chunk.write_instruction(op, self.prev_position);
+        self.chunk.write_instruction(op, self.prev_token.pos);
     }
 
     fn declaration(&mut self) -> Result<(), ParseError> {
@@ -109,10 +115,10 @@ impl<'a> Parser<'a> {
 
     fn var_declaration(&mut self) -> Result<(), ParseError> {
         // variable name
-        let ident = self.consume(token::Type::Ident, "Expect variable name")?;
-        let ident_id = self
-            .chunk
-            .write_const(Value::String(self.strings.get_or_intern(ident.lexeme)));
+        self.consume(token::Type::Ident, "Expect variable name")?;
+        let ident_id = self.chunk.write_const(Value::String(
+            self.strings.get_or_intern(self.prev_token.lexeme),
+        ));
         // initializer
         if self.advance_if(token::Type::Equal)? {
             self.expression()?;
@@ -154,9 +160,10 @@ impl<'a> Parser<'a> {
         self.parse_precedence(Precedence::Assignment)
     }
 
-    fn binary(&mut self, typ: token::Type) -> Result<(), ParseError> {
-        self.parse_precedence(Precedence::of(typ).next())?;
-        match typ {
+    fn binary(&mut self) -> Result<(), ParseError> {
+        let token_type = self.prev_token.typ;
+        self.parse_precedence(Precedence::of(token_type).next())?;
+        match token_type {
             token::Type::BangEqual => {
                 self.emit(OpCode::Equal);
                 self.emit(OpCode::Not);
@@ -181,8 +188,8 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn unary(&mut self, typ: token::Type) -> Result<(), ParseError> {
-        match typ {
+    fn unary(&mut self) -> Result<(), ParseError> {
+        match self.prev_token.typ {
             token::Type::Bang => self.emit(OpCode::Not),
             token::Type::Minus => self.emit(OpCode::Negate),
             _ => unreachable!("Rule table is wrong."),
@@ -191,9 +198,9 @@ impl<'a> Parser<'a> {
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
-        let ident_id = self
-            .chunk
-            .write_const(Value::String(self.strings.get_or_intern(self.prev_lexeme)));
+        let ident_id = self.chunk.write_const(Value::String(
+            self.strings.get_or_intern(self.prev_token.lexeme),
+        ));
 
         if can_assign && self.advance_if(token::Type::Equal)? {
             self.expression()?;
@@ -205,7 +212,7 @@ impl<'a> Parser<'a> {
     }
 
     fn string(&mut self) {
-        let value = self.prev_lexeme[1..self.prev_lexeme.len() - 1].to_string();
+        let value = self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1].to_string();
         let constant = self
             .chunk
             .write_const(Value::String(self.strings.get_or_intern(value)));
@@ -214,15 +221,16 @@ impl<'a> Parser<'a> {
 
     fn number(&mut self) {
         let value = self
-            .prev_lexeme
+            .prev_token
+            .lexeme
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
         let constant = self.chunk.write_const(Value::Number(value));
         self.emit(OpCode::Constant(constant));
     }
 
-    fn literal(&mut self, typ: token::Type) {
-        match typ {
+    fn literal(&mut self) {
+        match self.prev_token.typ {
             token::Type::False => self.emit(OpCode::False),
             token::Type::Nil => self.emit(OpCode::Nil),
             token::Type::True => self.emit(OpCode::True),
@@ -237,9 +245,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
-        let tok = self.advance()?;
+        self.advance()?;
         let can_assign = precedence <= Precedence::Assignment;
-        self.prefix_rule(tok.typ, can_assign)?;
+        self.prefix_rule(can_assign)?;
 
         loop {
             match self.peek() {
@@ -247,31 +255,31 @@ impl<'a> Parser<'a> {
                 Some(tok) if precedence > Precedence::of(tok.typ) => break,
                 _ => {}
             }
-            let tok = self.advance()?;
-            self.infix_rule(tok.typ)?;
+            self.advance()?;
+            self.infix_rule()?;
         }
 
         if can_assign && self.advance_if(token::Type::Equal)? {
             return Err(ParseError::InvalidAssignTarget(
-                self.prev_position,
-                self.prev_lexeme.to_string(),
+                self.prev_token.pos,
+                self.prev_token.lexeme.to_string(),
             ));
         }
         Ok(())
     }
 
-    fn prefix_rule(&mut self, typ: token::Type, can_assign: bool) -> Result<(), ParseError> {
-        match typ {
+    fn prefix_rule(&mut self, can_assign: bool) -> Result<(), ParseError> {
+        match self.prev_token.typ {
             token::Type::LParen => self.grouping()?,
-            token::Type::Minus | token::Type::Bang => self.unary(typ)?,
+            token::Type::Minus | token::Type::Bang => self.unary()?,
             token::Type::Ident => self.variable(can_assign)?,
             token::Type::String => self.string(),
             token::Type::Number => self.number(),
-            token::Type::True | token::Type::False | token::Type::Nil => self.literal(typ),
+            token::Type::True | token::Type::False | token::Type::Nil => self.literal(),
             _ => {
                 return Err(ParseError::UnexpectedToken(
-                    self.prev_position,
-                    self.prev_lexeme.to_string(),
+                    self.prev_token.pos,
+                    self.prev_token.lexeme.to_string(),
                     "Expect expression".to_string(),
                 ))
             }
@@ -279,8 +287,8 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn infix_rule(&mut self, typ: token::Type) -> Result<(), ParseError> {
-        match typ {
+    fn infix_rule(&mut self) -> Result<(), ParseError> {
+        match self.prev_token.typ {
             token::Type::Minus
             | token::Type::Plus
             | token::Type::Slash
@@ -290,10 +298,10 @@ impl<'a> Parser<'a> {
             | token::Type::Greater
             | token::Type::GreaterEqual
             | token::Type::Less
-            | token::Type::LessEqual => self.binary(typ),
+            | token::Type::LessEqual => self.binary(),
             _ => Err(ParseError::UnexpectedToken(
-                self.prev_position,
-                self.prev_lexeme.to_string(),
+                self.prev_token.pos,
+                self.prev_token.lexeme.to_string(),
                 "Expect expression".to_string(),
             )),
         }
@@ -301,8 +309,10 @@ impl<'a> Parser<'a> {
 
     fn synchronize(&mut self) {
         while self.peek().is_some() {
-            let tok = self.advance().expect("We have peeked.");
-            if tok.typ == token::Type::Eof || tok.typ == token::Type::Semicolon {
+            self.advance().expect("We have peeked.");
+            if self.prev_token.typ == token::Type::Eof
+                || self.prev_token.typ == token::Type::Semicolon
+            {
                 return;
             }
 
@@ -334,21 +344,18 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn advance(&mut self) -> Result<Token<'a>, ParseError> {
+    fn advance(&mut self) -> Result<(), ParseError> {
         while let Some(Err(err)) = self.tokens.peek() {
             eprintln!("{}", err);
             self.had_error = true;
             self.tokens.next();
         }
-        self.tokens
+        self.prev_token = self
+            .tokens
             .next()
-            .map(|tok| {
-                let tok = tok.expect("All errors have been skipped.");
-                self.prev_position = tok.pos;
-                self.prev_lexeme = tok.lexeme;
-                tok
-            })
-            .ok_or(ParseError::UnexpectedEof)
+            .map(|tok| tok.expect("All errors have been skipped."))
+            .ok_or(ParseError::UnexpectedEof)?;
+        Ok(())
     }
 
     fn advance_if(&mut self, typ: token::Type) -> Result<bool, ParseError> {
@@ -361,11 +368,12 @@ impl<'a> Parser<'a> {
         Ok(false)
     }
 
-    fn consume(&mut self, typ: token::Type, msg: &str) -> Result<Token<'a>, ParseError> {
+    fn consume(&mut self, typ: token::Type, msg: &str) -> Result<(), ParseError> {
         match self.tokens.peek() {
             Some(Ok(tok)) => {
                 if tok.typ == typ {
-                    self.advance()
+                    self.advance()?;
+                    Ok(())
                 } else {
                     Err(ParseError::UnexpectedToken(
                         tok.pos,
@@ -375,8 +383,8 @@ impl<'a> Parser<'a> {
                 }
             }
             None => Err(ParseError::UnexpectedToken(
-                self.prev_position,
-                self.prev_lexeme.to_string(),
+                self.prev_token.pos,
+                self.prev_token.lexeme.to_string(),
                 msg.to_string(),
             )),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
