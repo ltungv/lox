@@ -96,14 +96,18 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn emit(&mut self, op: OpCode) {
+        self.chunk.write_instruction(op, self.prev_position);
+    }
+
     fn declaration(&mut self) -> Result<(), ParseError> {
-        if let Ok(tok) = self.consume(token::Type::Var, "") {
-            return self.var_declaration(&tok);
+        if self.consume(token::Type::Var, "").is_ok() {
+            return self.var_declaration();
         }
         self.statement()
     }
 
-    fn var_declaration(&mut self, tok: &Token) -> Result<(), ParseError> {
+    fn var_declaration(&mut self) -> Result<(), ParseError> {
         // variable name
         let ident = self.consume(token::Type::Ident, "Expect variable name")?;
         let ident_id = self
@@ -113,7 +117,7 @@ impl<'a> Parser<'a> {
         if self.consume(token::Type::Equal, "").is_ok() {
             self.expression()?;
         } else {
-            self.chunk.write_instruction(OpCode::Nil, tok.pos);
+            self.emit(OpCode::Nil);
         }
         // ; terminated
         self.consume(
@@ -121,30 +125,28 @@ impl<'a> Parser<'a> {
             "Expect ';' after variable declaration",
         )?;
 
-        self.chunk
-            .write_instruction(OpCode::DefineGlobal(ident_id), tok.pos);
+        self.emit(OpCode::DefineGlobal(ident_id));
         Ok(())
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
-        if let Ok(tok) = self.consume(token::Type::Print, "") {
-            return self.print_statement(&tok);
+        if self.consume(token::Type::Print, "").is_ok() {
+            return self.print_statement();
         }
         self.expression_statement()
     }
 
-    fn print_statement(&mut self, tok: &Token) -> Result<(), ParseError> {
+    fn print_statement(&mut self) -> Result<(), ParseError> {
         self.expression()?;
         self.consume(token::Type::Semicolon, "Expect ';' after value")?;
-        self.chunk.write_instruction(OpCode::Print, tok.pos);
+        self.emit(OpCode::Print);
         Ok(())
     }
 
     fn expression_statement(&mut self) -> Result<(), ParseError> {
         self.expression()?;
         self.consume(token::Type::Semicolon, "Expect ';' after value")?;
-        self.chunk
-            .write_instruction(OpCode::Pop, self.prev_position);
+        self.emit(OpCode::Pop);
         Ok(())
     }
 
@@ -152,85 +154,78 @@ impl<'a> Parser<'a> {
         self.parse_precedence(Precedence::Assignment)
     }
 
-    fn binary(&mut self, tok: &Token) -> Result<(), ParseError> {
-        self.parse_precedence(Precedence::of(&tok.typ).next())?;
-        match tok.typ {
+    fn binary(&mut self, typ: token::Type) -> Result<(), ParseError> {
+        self.parse_precedence(Precedence::of(typ).next())?;
+        match typ {
             token::Type::BangEqual => {
-                self.chunk.write_instruction(OpCode::Equal, tok.pos);
-                self.chunk.write_instruction(OpCode::Not, tok.pos);
+                self.emit(OpCode::Equal);
+                self.emit(OpCode::Not);
             }
-            token::Type::EqualEqual => self.chunk.write_instruction(OpCode::Equal, tok.pos),
-            token::Type::Greater => self.chunk.write_instruction(OpCode::Greater, tok.pos),
+            token::Type::EqualEqual => self.emit(OpCode::Equal),
+            token::Type::Greater => self.emit(OpCode::Greater),
             token::Type::GreaterEqual => {
-                self.chunk.write_instruction(OpCode::Less, tok.pos);
-                self.chunk.write_instruction(OpCode::Not, tok.pos);
+                self.emit(OpCode::Less);
+                self.emit(OpCode::Not);
             }
-            token::Type::Less => self.chunk.write_instruction(OpCode::Less, tok.pos),
+            token::Type::Less => self.emit(OpCode::Less),
             token::Type::LessEqual => {
-                self.chunk.write_instruction(OpCode::Greater, tok.pos);
-                self.chunk.write_instruction(OpCode::Not, tok.pos);
+                self.emit(OpCode::Greater);
+                self.emit(OpCode::Not);
             }
-            token::Type::Plus => self.chunk.write_instruction(OpCode::Add, tok.pos),
-            token::Type::Minus => self.chunk.write_instruction(OpCode::Subtract, tok.pos),
-            token::Type::Star => self.chunk.write_instruction(OpCode::Multiply, tok.pos),
-            token::Type::Slash => self.chunk.write_instruction(OpCode::Divide, tok.pos),
+            token::Type::Plus => self.emit(OpCode::Add),
+            token::Type::Minus => self.emit(OpCode::Subtract),
+            token::Type::Star => self.emit(OpCode::Multiply),
+            token::Type::Slash => self.emit(OpCode::Divide),
             _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
 
-    fn unary(&mut self, tok: &Token) -> Result<(), ParseError> {
-        self.parse_precedence(Precedence::Unary)?;
-        match tok.typ {
-            token::Type::Bang => self.chunk.write_instruction(OpCode::Not, tok.pos),
-            token::Type::Minus => self.chunk.write_instruction(OpCode::Negate, tok.pos),
+    fn unary(&mut self, typ: token::Type) -> Result<(), ParseError> {
+        match typ {
+            token::Type::Bang => self.emit(OpCode::Not),
+            token::Type::Minus => self.emit(OpCode::Negate),
             _ => unreachable!("Rule table is wrong."),
         }
         Ok(())
     }
 
-    fn variable(&mut self, tok: &Token, can_assign: bool) -> Result<(), ParseError> {
+    fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
         let ident_id = self
             .chunk
-            .write_const(Value::String(self.strings.get_or_intern(tok.lexeme)));
+            .write_const(Value::String(self.strings.get_or_intern(self.prev_lexeme)));
 
         if can_assign && self.consume(token::Type::Equal, "").is_ok() {
             self.expression()?;
-            self.chunk
-                .write_instruction(OpCode::SetGlobal(ident_id), tok.pos);
+            self.emit(OpCode::SetGlobal(ident_id));
         } else {
-            self.chunk
-                .write_instruction(OpCode::GetGlobal(ident_id), tok.pos);
+            self.emit(OpCode::GetGlobal(ident_id));
         }
         Ok(())
     }
 
-    fn string(&mut self, tok: &Token) {
-        debug_assert_eq!(tok.typ, token::Type::String);
-        let value = tok.lexeme[1..tok.lexeme.len() - 1].to_string();
+    fn string(&mut self) {
+        let value = self.prev_lexeme[1..self.prev_lexeme.len() - 1].to_string();
         let constant = self
             .chunk
             .write_const(Value::String(self.strings.get_or_intern(value)));
-        self.chunk
-            .write_instruction(OpCode::Constant(constant), tok.pos);
+        self.emit(OpCode::Constant(constant));
     }
 
-    fn number(&mut self, tok: &Token) {
-        debug_assert_eq!(tok.typ, token::Type::Number);
-        let value = tok
-            .lexeme
+    fn number(&mut self) {
+        let value = self
+            .prev_lexeme
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
         let constant = self.chunk.write_const(Value::Number(value));
-        self.chunk
-            .write_instruction(OpCode::Constant(constant), tok.pos);
+        self.emit(OpCode::Constant(constant));
     }
 
-    fn literal(&mut self, tok: &Token) {
-        match tok.typ {
-            token::Type::False => self.chunk.write_instruction(OpCode::False, tok.pos),
-            token::Type::Nil => self.chunk.write_instruction(OpCode::Nil, tok.pos),
-            token::Type::True => self.chunk.write_instruction(OpCode::True, tok.pos),
+    fn literal(&mut self, typ: token::Type) {
+        match typ {
+            token::Type::False => self.emit(OpCode::False),
+            token::Type::Nil => self.emit(OpCode::Nil),
+            token::Type::True => self.emit(OpCode::True),
             _ => unreachable!("Rule table is wrong."),
         }
     }
@@ -244,16 +239,16 @@ impl<'a> Parser<'a> {
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
         let tok = self.advance()?;
         let can_assign = precedence <= Precedence::Assignment;
-        self.prefix_rule(&tok, can_assign)?;
+        self.prefix_rule(tok.typ, can_assign)?;
 
         loop {
             match self.peek() {
                 None => break,
-                Some(tok) if precedence > Precedence::of(&tok.typ) => break,
+                Some(tok) if precedence > Precedence::of(tok.typ) => break,
                 _ => {}
             }
             let tok = self.advance()?;
-            self.infix_rule(&tok)?;
+            self.infix_rule(tok.typ)?;
         }
 
         if can_assign && self.consume(token::Type::Equal, "").is_ok() {
@@ -265,18 +260,18 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn prefix_rule(&mut self, tok: &Token, can_assign: bool) -> Result<(), ParseError> {
-        match tok.typ {
+    fn prefix_rule(&mut self, typ: token::Type, can_assign: bool) -> Result<(), ParseError> {
+        match typ {
             token::Type::LParen => self.grouping()?,
-            token::Type::Minus | token::Type::Bang => self.unary(tok)?,
-            token::Type::Ident => self.variable(tok, can_assign)?,
-            token::Type::String => self.string(tok),
-            token::Type::Number => self.number(tok),
-            token::Type::True | token::Type::False | token::Type::Nil => self.literal(tok),
+            token::Type::Minus | token::Type::Bang => self.unary(typ)?,
+            token::Type::Ident => self.variable(can_assign)?,
+            token::Type::String => self.string(),
+            token::Type::Number => self.number(),
+            token::Type::True | token::Type::False | token::Type::Nil => self.literal(typ),
             _ => {
                 return Err(ParseError::UnexpectedToken(
-                    tok.pos,
-                    tok.lexeme.to_string(),
+                    self.prev_position,
+                    self.prev_lexeme.to_string(),
                     "Expect expression".to_string(),
                 ))
             }
@@ -284,8 +279,8 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn infix_rule(&mut self, tok: &Token) -> Result<(), ParseError> {
-        match tok.typ {
+    fn infix_rule(&mut self, typ: token::Type) -> Result<(), ParseError> {
+        match typ {
             token::Type::Minus
             | token::Type::Plus
             | token::Type::Slash
@@ -295,10 +290,10 @@ impl<'a> Parser<'a> {
             | token::Type::Greater
             | token::Type::GreaterEqual
             | token::Type::Less
-            | token::Type::LessEqual => self.binary(tok),
+            | token::Type::LessEqual => self.binary(typ),
             _ => Err(ParseError::UnexpectedToken(
-                tok.pos,
-                tok.lexeme.to_string(),
+                self.prev_position,
+                self.prev_lexeme.to_string(),
                 "Expect expression".to_string(),
             )),
         }
@@ -428,7 +423,7 @@ impl Precedence {
         }
     }
 
-    fn of(typ: &token::Type) -> Self {
+    fn of(typ: token::Type) -> Self {
         match typ {
             token::Type::BangEqual | token::Type::EqualEqual => (Precedence::Equality),
             token::Type::Greater
