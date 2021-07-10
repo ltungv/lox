@@ -159,7 +159,7 @@ impl<'s> Scanner<'s> {
                     self.advance();
                 }
                 '/' => {
-                    if !self.peek_check(|c| c == '/') {
+                    if !self.peek_next_check(|c| c == '/') {
                         return;
                     }
                     while self.peek_check(|c| c != '\n') {
