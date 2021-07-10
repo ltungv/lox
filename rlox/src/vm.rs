@@ -97,6 +97,24 @@ impl VM {
                         unreachable!("Constant for the variable name must have been added.");
                     }
                 }
+                OpCode::SetGlobal(ref idx) => {
+                    let name = chunk.read_const(*idx);
+                    if let Value::String(name) = name {
+                        let val = self.peek(0)?.clone();
+                        if !self.globals.contains_key(name) {
+                            let name = self
+                                .strings
+                                .resolve(*name)
+                                .expect("String for variable name must have been allocated.")
+                                .to_string();
+                            return Err(RuntimeError::UndefinedVariable(*pos, name));
+                        }
+                        self.globals.insert(*name, val);
+                        self.pop()?;
+                    } else {
+                        unreachable!("Constant for the variable name must have been added.");
+                    }
+                }
                 OpCode::Constant(ref idx) => {
                     let val = chunk.read_const(*idx);
                     self.push(val.clone())?;
@@ -112,7 +130,7 @@ impl VM {
                     Value::Number(v) => {
                         *v = -*v;
                     }
-                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
                 },
                 OpCode::Equal => {
                     let v2 = self.pop()?;
@@ -125,7 +143,7 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Bool(n1 > n2);
                     }
-                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
                 },
                 OpCode::Less => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -133,7 +151,7 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Bool(n1 < n2);
                     }
-                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
                 },
                 OpCode::Add => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -165,7 +183,7 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Number(n1 - n2);
                     }
-                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
                 },
                 OpCode::Multiply => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -173,7 +191,7 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Number(n1 * n2);
                     }
-                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
                 },
                 OpCode::Divide => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -181,7 +199,7 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Number(n1 / n2);
                     }
-                    _ => return Err(RuntimeError::BinaryNumberOperands(*pos)),
+                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
                 },
             }
         }

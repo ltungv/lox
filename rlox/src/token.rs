@@ -97,8 +97,6 @@ pub enum Type {
     Var,
     /// Keyword 'while'
     While,
-    /// Special token for indicatin end of file
-    Eof,
 }
 
 /// Position of the token in source

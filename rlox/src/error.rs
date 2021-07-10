@@ -13,9 +13,9 @@ pub enum RuntimeError {
     /// or two strings
     InvalidAddOperands(Position),
     /// Wrong arguments given to binary operators that only accept numbers
-    BinaryNumberOperands(Position),
+    ExpectedTwoNumbers(Position),
     /// Wrong arguments given to unary operators that only accept a numbers
-    UnaryNumberOperand(Position),
+    ExpectedOneNumber(Position),
     /// Accessing an undefined variable
     UndefinedVariable(Position, String),
 }
@@ -23,8 +23,10 @@ pub enum RuntimeError {
 /// Error while parsing Lox tokens
 #[derive(Debug)]
 pub enum ParseError {
+    /// Can not assign a value to the LHS
+    InvalidAssignTarget(Position, String),
     /// Current token is not supposed to be there
-    UnexpectedToken(Position, Option<String>, String),
+    UnexpectedToken(Position, String, String),
     /// Reached EOF abruptly
     UnexpectedEof,
 }
@@ -52,26 +54,26 @@ impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             Self::StackOverflow => {
-                writeln!(f, "Virtual machine's stack overflows.")
+                write!(f, "Virtual machine's stack overflows.")
             }
             Self::StackUnderflow => {
-                writeln!(f, "Virtual machine's stack underflows.")
+                write!(f, "Virtual machine's stack underflows.")
             }
             Self::InvalidAddOperands(p) => {
-                writeln!(
+                write!(
                     f,
                     "Operands must be two numbers or two strings.\n{} in script.",
                     p
                 )
             }
-            Self::BinaryNumberOperands(p) => {
-                writeln!(f, "Operands must be numbers.\n{} in script.", p)
+            Self::ExpectedTwoNumbers(p) => {
+                write!(f, "Operands must be numbers.\n{} in script.", p)
             }
-            Self::UnaryNumberOperand(p) => {
-                writeln!(f, "Operand must be a number.\n{} in script.", p)
+            Self::ExpectedOneNumber(p) => {
+                write!(f, "Operand must be a number.\n{} in script.", p)
             }
             Self::UndefinedVariable(p, name) => {
-                writeln!(f, "Undefined variable '{}'.\n{} in script.", name, p)
+                write!(f, "Undefined variable '{}'.\n{} in script.", name, p)
             }
         }
     }
@@ -81,10 +83,19 @@ impl std::error::Error for ParseError {}
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidAssignTarget(p, lexeme) => {
+                let at = if lexeme.is_empty() {
+                    "end".to_string()
+                } else {
+                    format!("'{}'", lexeme)
+                };
+                write!(f, "{} Error at {}: Invalid assignment target.", p, at)
+            }
             Self::UnexpectedToken(ref pos, ref lexeme, ref msg) => {
-                let at = match lexeme {
-                    Some(s) => format!("'{}'", s),
-                    None => "end".to_string(),
+                let at = if lexeme.is_empty() {
+                    "end".to_string()
+                } else {
+                    format!("'{}'", lexeme)
                 };
                 write!(f, "{} Error at {}: {}.", pos, at, msg)
             }

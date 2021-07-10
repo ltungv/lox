@@ -30,8 +30,10 @@ pub enum OpCode {
     Return,
     /// Pop the top of the stack and define a variable initialized with that value.
     DefineGlobal(u8),
-    /// Pop the top of the stack and define a variable initialized with that value.
+    /// Get the value of the global variable
     GetGlobal(u8),
+    /// Set the value of the global variable
+    SetGlobal(u8),
     /// Load a constant
     Constant(u8),
     /// Load a `nil` value
@@ -205,6 +207,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
         OpCode::Return => println!("OP_RETURN"),
         OpCode::DefineGlobal(ref idx) => constant_instuction("OP_DEFINE_GLOBAL", *idx),
         OpCode::GetGlobal(ref idx) => constant_instuction("OP_GET_GLOBAL", *idx),
+        OpCode::SetGlobal(ref idx) => constant_instuction("OP_SET_GLOBAL", *idx),
         OpCode::Constant(ref idx) => constant_instuction("OP_CONSTANT", *idx),
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
