@@ -20,7 +20,9 @@
 pub enum OpCode {
     /// Pop the top of the stack
     Pop,
-    /// Print the expression on top of the stack
+    /// Pop the top of the stack and define a variable initialized with that value.
+    DefineGlobal(u8),
+    /// Print an expression in human readable format
     Print,
     /// Return from the current function
     Return,
@@ -42,14 +44,12 @@ pub enum OpCode {
     Greater,
     /// Compare if the first operand is less than the second
     Less,
-    /// Add two number operands
+    /// Add two number operands or two string operands
     Add,
-    /// Subtract the first operand with the second operand, both operands
-    /// must be numbers
+    /// Subtract two number operands
     Subtract,
     /// Multiply two number operands
     Multiply,
-    /// Divide the first operand with the second operand, both operands
-    /// must be numbers
+    /// Divide two number operands
     Divide,
 }

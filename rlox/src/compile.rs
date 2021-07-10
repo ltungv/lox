@@ -61,7 +61,34 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Result<(), ParseError> {
+        if self.advance_when(token::Type::Var).is_some() {
+            return self.var_declaration();
+        }
         self.statement()
+    }
+
+    fn var_declaration(&mut self) -> Result<(), ParseError> {
+        // variable name
+        let ident = self.consume(token::Type::Ident, "Expect variable name")?;
+        let ident_id = self.identifier_constant(&ident)?;
+        // initializer
+        if self.advance_when(token::Type::Equal).is_some() {
+            self.expression()?;
+        } else {
+            self.chunk.write_instruction(OpCode::Nil, self.last_pos);
+        }
+        // ; terminated
+        self.consume(token::Type::Semicolon, "Expect ';' after variable declaration")?;
+
+        self.chunk
+            .write_instruction(OpCode::DefineGlobal(ident_id), self.last_pos);
+        Ok(())
+    }
+
+    fn identifier_constant(&mut self, ident: &Token) -> Result<u8, ParseError> {
+        Ok(self
+            .chunk
+            .write_const(Value::String(self.strings.get_or_intern(ident.lexeme))))
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
@@ -128,7 +155,8 @@ impl<'a> Parser<'a> {
 
     fn grouping(&mut self) -> Result<(), ParseError> {
         self.expression()?;
-        self.consume(token::Type::RParen, "Expect ')' after expression")
+        self.consume(token::Type::RParen, "Expect ')' after expression")?;
+        Ok(())
     }
 
     fn literal(&mut self, tok: &Token) -> Result<(), ParseError> {
@@ -224,12 +252,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn consume(&mut self, typ: token::Type, msg: &str) -> Result<(), ParseError> {
+    fn consume(&mut self, typ: token::Type, msg: &str) -> Result<Token<'a>, ParseError> {
         match self.tokens.peek() {
             Some(Ok(tok)) => {
                 if tok.typ == typ {
-                    self.advance()?;
-                    Ok(())
+                    self.advance()
                 } else {
                     Err(ParseError::UnexpectedToken(
                         tok.pos,
@@ -410,21 +437,26 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
         print!("{:4} ", chunk.positions[idx].line);
     }
 
-    match chunk.instructions[idx] {
-        OpCode::Pop => println!("OP_POP"),
-        OpCode::Print => println!("OP_PRINT"),
-        OpCode::Return => println!("OP_RETURN"),
-        OpCode::Constant(ref idx) => match chunk.read_const(*idx) {
+    let constant_instuction = |op_repr: &str, idx: u8| {
+        match chunk.read_const(idx) {
             Value::String(id) => println!(
                 "{:-16} {:4} {}",
-                "OP_CONSTANT",
+                op_repr,
                 idx,
                 strings
                     .resolve(*id)
                     .expect("String must be allocated before access.")
             ),
             val => println!("{:-16} {:4} {}", "OP_CONSTANT", idx, val.as_string(strings)),
-        },
+        }
+    };
+
+    match chunk.instructions[idx] {
+        OpCode::Pop => println!("OP_POP"),
+        OpCode::DefineGlobal(ref idx) => constant_instuction("OP_DEFINE_GLOBAL", *idx),
+        OpCode::Print => println!("OP_PRINT"),
+        OpCode::Return => println!("OP_RETURN"),
+        OpCode::Constant(ref idx) => constant_instuction("OP_CONSTANT", *idx),
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),

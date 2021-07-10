@@ -1,4 +1,8 @@
-use crate::{compile, Chunk, Error, OpCode, Position, RuntimeError, StringInterner, Value};
+use std::collections::HashMap;
+
+use crate::{
+    compile, Chunk, Error, OpCode, Position, RuntimeError, StringId, StringInterner, Value,
+};
 
 #[cfg(debug_assertions)]
 use crate::{disassemble_chunk, disassemble_instruction};
@@ -11,6 +15,7 @@ pub const MAX_STACK_SIZE: usize = 256;
 pub struct VM {
     ip: usize,
     stack: Vec<Value>,
+    globals: HashMap<StringId, Value>,
 }
 
 impl Default for VM {
@@ -18,6 +23,7 @@ impl Default for VM {
         Self {
             ip: 0,
             stack: Vec::with_capacity(MAX_STACK_SIZE),
+            globals: HashMap::new(),
         }
     }
 }
@@ -54,6 +60,15 @@ impl VM {
                 OpCode::Pop => {
                     self.pop()?;
                 }
+                OpCode::DefineGlobal(ref idx) => {
+                    let name = chunk.read_const(*idx);
+                    if let Value::String(name) = name {
+                        let val = self.pop()?;
+                        self.globals.insert(*name, val.clone());
+                    } else {
+                        unreachable!("Constant for the variable name must have been added.");
+                    }
+                }
                 OpCode::Print => {
                     let v = self.pop()?;
                     println!("{}", v.as_string(strings));
@@ -76,7 +91,7 @@ impl VM {
                             *v = Value::Bool(v.is_falsey());
                         },
                         |_| true,
-                        |_| unreachable!(),
+                        |_| unreachable!("There's no type checking"),
                     )?;
                 }
                 OpCode::Negate => {
@@ -94,7 +109,7 @@ impl VM {
                             *v1 = Value::Bool(v1.equal(v2));
                         },
                         |_| true,
-                        |_| unreachable!(),
+                        |_| unreachable!("There's no type checking"),
                     )?;
                 }
                 OpCode::Greater => {
