@@ -144,6 +144,51 @@ impl<'a> Compiler<'a> {
         self.statement()
     }
 
+    fn var_declaration(&mut self) -> Result<(), ParseError> {
+        let ident_id = self.parse_variable()?;
+        // initializer
+        if self.advance_if(token::Type::Equal)? {
+            self.expression()?;
+        } else {
+            self.emit(OpCode::Nil);
+        }
+        // ; terminated
+        self.consume(
+            token::Type::Semicolon,
+            "Expect ';' after variable declaration",
+        )?;
+        self.define_variable(ident_id)
+    }
+
+    fn parse_variable(&mut self) -> Result<u8, ParseError> {
+        self.consume(token::Type::Ident, "Expect variable name")?;
+        self.declare_variable()?;
+        Ok(self.identifier_constant())
+    }
+
+    fn define_variable(&mut self, ident_id: u8) -> Result<(), ParseError> {
+        // Local variables are not looked up by name. There's no need to stuff
+        // the variable name into the constant table.
+        if self.scope_depth > 0 {
+            self.locals
+                .last_mut()
+                .expect("We just pushed a local.")
+                .initialized = true;
+            return Ok(());
+        }
+        self.emit(OpCode::DefineGlobal(ident_id));
+        Ok(())
+    }
+
+    fn identifier_constant(&mut self) -> u8 {
+        if self.scope_depth > 0 {
+            0 // A dummy value used when we're not in the global scope
+        } else {
+            self.chunk
+                .write_const(Value::String(intern::id(self.prev_token.lexeme)))
+        }
+    }
+
     fn declare_variable(&mut self) -> Result<(), ParseError> {
         if self.scope_depth == 0 {
             return Ok(());
@@ -168,43 +213,7 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        self.locals
-            .push((name, self.scope_depth).into());
-        Ok(())
-    }
-
-    fn var_declaration(&mut self) -> Result<(), ParseError> {
-        // variable name
-        self.consume(token::Type::Ident, "Expect variable name")?;
-        self.declare_variable()?;
-        let ident_id = if self.scope_depth > 0 {
-            0 // A dummy value used when we're not in the global scope
-        } else {
-            self.chunk
-                .write_const(Value::String(intern::id(self.prev_token.lexeme)))
-        };
-        // initializer
-        if self.advance_if(token::Type::Equal)? {
-            self.expression()?;
-        } else {
-            self.emit(OpCode::Nil);
-        }
-        // ; terminated
-        self.consume(
-            token::Type::Semicolon,
-            "Expect ';' after variable declaration",
-        )?;
-
-        // Local variables are not looked up by name. There's no need to stuff
-        // the variable name into the constant table.
-        if self.scope_depth > 0 {
-            self.locals
-                .last_mut()
-                .expect("We just pushed a local.")
-                .initialized = true;
-            return Ok(());
-        }
-        self.emit(OpCode::DefineGlobal(ident_id));
+        self.locals.push((name, self.scope_depth).into());
         Ok(())
     }
 
@@ -214,6 +223,9 @@ impl<'a> Compiler<'a> {
             self.block()?;
             self.end_scope();
             return Ok(());
+        }
+        if self.advance_if(token::Type::If)? {
+            return self.if_statement();
         }
         if self.advance_if(token::Type::Print)? {
             return self.print_statement();
@@ -244,6 +256,45 @@ impl<'a> Compiler<'a> {
             self.emit(OpCode::Pop);
             self.locals.pop();
         }
+    }
+
+    fn if_statement(&mut self) -> Result<(), ParseError> {
+        self.consume(token::Type::LParen, "Expect '(' after 'if'")?;
+        self.expression()?;
+        self.consume(token::Type::RParen, "Expect ')' after condition")?;
+
+        // This jumps to the else clause
+        self.emit(OpCode::JumpIfFalse(0xFFFF));
+        let then_jump = self.chunk.last_instruction_index();
+
+        // Jump does not pop the conditional out of the stack, so we do it manually.
+        // Here we pop the true value.
+        self.emit(OpCode::Pop);
+        self.statement()?;
+
+        // This jumps through the else clause
+        self.emit(OpCode::Jump(0xFFFF));
+        let else_jump = self.chunk.last_instruction_index();
+
+        self.patch_jump(then_jump)?;
+        // Here we pop the false value.
+        self.emit(OpCode::Pop);
+        if self.advance_if(token::Type::Else)? {
+            self.statement()?;
+        }
+        self.patch_jump(else_jump)
+    }
+
+    fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
+        let offset = self.chunk.last_instruction_index() - jump;
+        if offset > u16::MAX as usize {
+            return Err(ParseError::JumpTooLarge(
+                self.prev_token.pos,
+                self.prev_token.lexeme.to_string(),
+            ));
+        }
+        self.chunk.patch_jump_instruction(jump, offset as u16);
+        Ok(())
     }
 
     fn print_statement(&mut self) -> Result<(), ParseError> {
@@ -301,25 +352,6 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn resolve_local(&self, name: &Token) -> Result<Option<u8>, ParseError> {
-        self.locals
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, l)| l.name == intern::id(name.lexeme))
-            .map(|(i, l)| {
-                if l.initialized {
-                    Ok(i as u8)
-                } else {
-                    Err(ParseError::SelfReferencingInitializer(
-                        name.pos,
-                        name.lexeme.to_string(),
-                    ))
-                }
-            })
-            .transpose()
-    }
-
     fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
         let (op_get, op_set) = if let Some(local) = self.resolve_local(&self.prev_token)? {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
@@ -337,6 +369,25 @@ impl<'a> Compiler<'a> {
             self.emit(op_get);
         }
         Ok(())
+    }
+
+    fn resolve_local(&self, name: &Token) -> Result<Option<u8>, ParseError> {
+        self.locals
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, l)| l.name == intern::id(name.lexeme))
+            .map(|(i, l)| {
+                if l.initialized {
+                    Ok(i as u8)
+                } else {
+                    Err(ParseError::SelfReferencingInitializer(
+                        name.pos,
+                        name.lexeme.to_string(),
+                    ))
+                }
+            })
+            .transpose()
     }
 
     fn string(&mut self) {

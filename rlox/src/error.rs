@@ -23,6 +23,8 @@ pub enum RuntimeError {
 /// Error while parsing Lox tokens
 #[derive(Debug)]
 pub enum ParseError {
+    /// Range to jump over exceeds u16
+    JumpTooLarge(Position, String),
     /// Can not use variable name in its initializer
     SelfReferencingInitializer(Position, String),
     /// A named can only be declared as variable once in local scope
@@ -96,6 +98,14 @@ impl fmt::Display for ParseError {
             }
         };
         match self {
+            Self::JumpTooLarge(p, lexeme) => {
+                write!(
+                    f,
+                    "{} Error at {}: Too much code to jump over.",
+                    p,
+                    at(lexeme)
+                )
+            }
             Self::SelfReferencingInitializer(p, lexeme) => {
                 write!(
                     f,

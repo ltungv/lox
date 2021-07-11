@@ -23,10 +23,14 @@ use crate::{intern, Position, StringId};
 pub enum OpCode {
     /// Pop the top of the stack
     Pop,
-    /// Print an expression in human readable format
-    Print,
+    /// Jump forward for n instructions
+    Jump(u16),
+    /// Jump forward for n instructions if current stack top is falsey
+    JumpIfFalse(u16),
     /// Return from the current function
     Return,
+    /// Print an expression in human readable format
+    Print,
     /// Set the value of a global variable
     GetLocal(u8),
     /// Set the value of a local variable
@@ -152,6 +156,21 @@ impl Chunk {
         (&self.instructions[idx], &self.positions[idx])
     }
 
+    /// Return the index of the last written instruction.
+    pub fn last_instruction_index(&self) -> usize {
+        self.instructions.len() - 1
+    }
+
+    /// Replace the jump offset at the given jump instruction
+    pub fn patch_jump_instruction(&mut self, jump: usize, offset: u16) {
+        match self.instructions[jump] {
+            OpCode::Jump(ref mut placeholder) | OpCode::JumpIfFalse(ref mut placeholder) => {
+                *placeholder = offset;
+            }
+            _ => unreachable!("The given location must hold a jump instruction."),
+        }
+    }
+
     /// Add a constant value to the chunk and return it position in the Vec
     pub fn write_const(&mut self, val: Value) -> u8 {
         self.constants.push(val);
@@ -168,17 +187,15 @@ impl Chunk {
 #[cfg(debug_assertions)]
 pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     println!("== {} ==", name);
-    let mut bytes = 0;
     for i in 0..chunk.instructions.len() {
-        disassemble_instruction(chunk, i, bytes);
-        bytes += std::mem::size_of_val(&chunk.instructions[i]);
+        disassemble_instruction(chunk, i);
     }
 }
 
 /// Display an instruction in human readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_instruction(chunk: &Chunk, idx: usize, bytes: usize) {
-    print!("{:04} ", bytes);
+pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
+    print!("{:04} ", idx);
     if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
         print!("   | ");
     } else {
@@ -194,11 +211,21 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, bytes: usize) {
         );
     };
     let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);
+    let jump_instruction = |op_repr: &str, jump: usize, offset: u16, sign: usize| {
+        println!(
+            "{:-16} {:4} -> {}",
+            op_repr,
+            jump,
+            jump + sign * offset as usize + 1,
+        );
+    };
 
     match chunk.instructions[idx] {
         OpCode::Pop => println!("OP_POP"),
-        OpCode::Print => println!("OP_PRINT"),
+        OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, 1),
+        OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, 1),
         OpCode::Return => println!("OP_RETURN"),
+        OpCode::Print => println!("OP_PRINT"),
         OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
         OpCode::SetLocal(ref slot) => byte_instruction("OP_SET_LOCAL", *slot),
         OpCode::DefineGlobal(ref const_id) => constant_instruction("OP_DEFINE_GLOBAL", *const_id),

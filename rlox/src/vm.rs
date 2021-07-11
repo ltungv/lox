@@ -44,31 +44,34 @@ impl VM {
 
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
-        #[cfg(debug_assertions)]
-        let mut bytes = 0;
-
         loop {
-            let (opcode, pos) = chunk.read_instruction(self.ip);
-            self.ip += 1;
-
             #[cfg(debug_assertions)]
             {
                 print_stack_trace(&self.stack);
-                disassemble_instruction(&chunk, self.ip - 1, bytes);
-                bytes += std::mem::size_of_val(opcode);
+                disassemble_instruction(&chunk, self.ip);
             }
 
+            let (opcode, pos) = chunk.read_instruction(self.ip);
+            self.ip += 1;
             match opcode {
                 OpCode::Pop => {
                     self.pop()?;
                 }
-                OpCode::Print => {
-                    let v = self.pop()?;
-                    println!("{}", v);
+                OpCode::Jump(offset) => {
+                    self.ip += *offset as usize;
+                }
+                OpCode::JumpIfFalse(offset) => {
+                    if self.peek(0)?.is_falsey() {
+                        self.ip += *offset as usize;
+                    }
                 }
                 OpCode::Return => {
                     // exit the interpreter
                     return Ok(());
+                }
+                OpCode::Print => {
+                    let v = self.pop()?;
+                    println!("{}", v);
                 }
                 OpCode::GetLocal(ref slot) => {
                     let local = self.stack[*slot as usize].clone();
