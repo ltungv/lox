@@ -20,7 +20,6 @@ use crate::{intern, Position, StringId};
 ///
 /// [IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
 #[derive(Debug, Clone, Copy)]
-#[repr(u8)]
 pub enum OpCode {
     /// Pop the top of the stack
     Pop,
@@ -169,15 +168,17 @@ impl Chunk {
 #[cfg(debug_assertions)]
 pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     println!("== {} ==", name);
+    let mut bytes = 0;
     for i in 0..chunk.instructions.len() {
-        disassemble_instruction(chunk, i);
+        disassemble_instruction(chunk, i, bytes);
+        bytes += std::mem::size_of_val(&chunk.instructions[i]);
     }
 }
 
 /// Display an instruction in human readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
-    print!("{:04} ", idx);
+pub fn disassemble_instruction(chunk: &Chunk, idx: usize, bytes: usize) {
+    print!("{:04} ", bytes);
     if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
         print!("   | ");
     } else {

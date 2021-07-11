@@ -44,15 +44,20 @@ impl VM {
 
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
+        #[cfg(debug_assertions)]
+        let mut bytes = 0;
+
         loop {
+            let (opcode, pos) = chunk.read_instruction(self.ip);
+            self.ip += 1;
+
             #[cfg(debug_assertions)]
             {
                 print_stack_trace(&self.stack);
-                disassemble_instruction(&chunk, self.ip);
+                disassemble_instruction(&chunk, self.ip - 1, bytes);
+                bytes += std::mem::size_of_val(opcode);
             }
 
-            let (opcode, pos) = chunk.read_instruction(self.ip);
-            self.ip += 1;
             match opcode {
                 OpCode::Pop => {
                     self.pop()?;
