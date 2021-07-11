@@ -1,7 +1,5 @@
-use std::iter::Peekable;
-
 use crate::{
-    intern, scan, token, Chunk, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
+    intern, token, Chunk, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
     MAX_STACK_SIZE,
 };
 
@@ -84,8 +82,9 @@ use crate::{
 ///
 #[derive(Debug)]
 pub struct Compiler<'a> {
-    tokens: Peekable<scan::Iter<'a>>,
-    prev_token: Token<'a>,
+    scanner: Scanner<'a>,
+    current_token: Token<'a>,
+    previous_token: Token<'a>,
     had_error: bool,
 
     chunk: Chunk,
@@ -97,8 +96,13 @@ impl<'a> Compiler<'a> {
     /// Create a new parser
     pub fn new(src: &'a str) -> Self {
         Self {
-            tokens: Scanner::new(src).into_iter().peekable(),
-            prev_token: Token {
+            scanner: Scanner::new(src),
+            current_token: Token {
+                typ: token::Type::Eof,
+                lexeme: "",
+                pos: Position::default(),
+            },
+            previous_token: Token {
                 typ: token::Type::Eof,
                 lexeme: "",
                 pos: Position::default(),
@@ -112,11 +116,8 @@ impl<'a> Compiler<'a> {
 
     /// Starts building the bytecode chunk
     pub fn compile(&mut self) {
-        while let Some(tok) = self.peek() {
-            if tok.typ == token::Type::Eof {
-                return;
-            }
-
+        self.advance();
+        while self.current_token.typ != token::Type::Eof {
             if let Err(err) = self.declaration() {
                 eprintln!("{}", err);
                 self.had_error = true;
@@ -135,11 +136,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit(&mut self, op: OpCode) {
-        self.chunk.write_instruction(op, self.prev_token.pos);
+        self.chunk.write_instruction(op, self.previous_token.pos);
     }
 
     fn emit_jump(&mut self, op: OpCode) -> usize {
-        self.chunk.write_instruction(op, self.prev_token.pos);
+        self.emit(op);
         self.chunk.instructions_count()
     }
 
@@ -147,19 +148,18 @@ impl<'a> Compiler<'a> {
         // +1 because the offset also takes into account the newly emitted loop opcode
         let offset = self.chunk.instructions_count() - loop_start + 1;
         if offset > u16::MAX as usize {
-            return Err(ParseError::ExceedLimit(
-                self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+            return Err(ParseError::JumpTooLarge(
+                self.previous_token.pos,
+                self.previous_token.lexeme.to_string(),
                 "Loop body too large",
             ));
         }
-        self.chunk
-            .write_instruction(OpCode::Loop(offset as u16), self.prev_token.pos);
+        self.emit(OpCode::Loop(offset as u16));
         Ok(())
     }
 
     fn declaration(&mut self) -> Result<(), ParseError> {
-        if self.advance_if(token::Type::Var)? {
+        if self.advance_if(token::Type::Var) {
             return self.var_declaration();
         }
         self.statement()
@@ -168,7 +168,7 @@ impl<'a> Compiler<'a> {
     fn var_declaration(&mut self) -> Result<(), ParseError> {
         let ident_id = self.parse_variable()?;
         // initializer
-        if self.advance_if(token::Type::Equal)? {
+        if self.advance_if(token::Type::Equal) {
             self.expression()?;
         } else {
             self.emit(OpCode::Nil);
@@ -206,7 +206,7 @@ impl<'a> Compiler<'a> {
             0 // A dummy value used when we're not in the global scope
         } else {
             self.chunk
-                .write_const(Value::String(intern::id(self.prev_token.lexeme)))
+                .write_const(Value::String(intern::id(self.previous_token.lexeme)))
         }
     }
 
@@ -216,22 +216,22 @@ impl<'a> Compiler<'a> {
         }
         if self.locals.len() == MAX_STACK_SIZE {
             return Err(ParseError::InvalidDeclaration(
-                self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+                self.previous_token.pos,
+                self.previous_token.lexeme.to_string(),
                 "Too many local variables in function",
             ));
         }
 
-        let name = intern::id(self.prev_token.lexeme);
+        let name = intern::id(self.previous_token.lexeme);
         for l in self.locals.iter() {
             if l.initialized && l.depth < self.scope_depth {
                 break;
             }
             if l.name == name {
                 return Err(ParseError::InvalidDeclaration(
-                    self.prev_token.pos,
-                    self.prev_token.lexeme.to_string(),
-                    "Already variable with this name in this scope",
+                    self.previous_token.pos,
+                    self.previous_token.lexeme.to_string(),
+                    "Already a variable with this name in this scope",
                 ));
             }
         }
@@ -241,15 +241,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
-        if self.advance_if(token::Type::Print)? {
+        if self.advance_if(token::Type::Print) {
             self.print_statement()
-        } else if self.advance_if(token::Type::For)? {
+        } else if self.advance_if(token::Type::For) {
             self.for_statement()
-        } else if self.advance_if(token::Type::If)? {
+        } else if self.advance_if(token::Type::If) {
             self.if_statement()
-        } else if self.advance_if(token::Type::While)? {
+        } else if self.advance_if(token::Type::While) {
             self.while_statement()
-        } else if self.advance_if(token::Type::LBrace)? {
+        } else if self.advance_if(token::Type::LBrace) {
             self.begin_scope();
             self.block()?;
             self.end_scope();
@@ -260,10 +260,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn block(&mut self) -> Result<(), ParseError> {
-        while let Some(tok) = self.peek() {
-            if tok.typ == token::Type::RBrace || tok.typ == token::Type::Eof {
-                break;
-            }
+        while self.current_token.typ != token::Type::RBrace
+            && self.current_token.typ != token::Type::Eof
+        {
             self.declaration()?;
         }
         self.consume(token::Type::RBrace, "Expect '}' after blok.")
@@ -302,7 +301,7 @@ impl<'a> Compiler<'a> {
         // Here we pop the false value.
         self.emit(OpCode::Pop);
 
-        if self.advance_if(token::Type::Else)? {
+        if self.advance_if(token::Type::Else) {
             self.statement()?;
         }
         self.patch_jump(else_jump)
@@ -311,9 +310,9 @@ impl<'a> Compiler<'a> {
     fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
         let offset = self.chunk.instructions_count() - jump;
         if offset > u16::MAX as usize {
-            return Err(ParseError::ExceedLimit(
-                self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+            return Err(ParseError::JumpTooLarge(
+                self.current_token.pos,
+                self.current_token.lexeme.to_string(),
                 "Too much code to jump over",
             ));
         }
@@ -342,9 +341,9 @@ impl<'a> Compiler<'a> {
         self.begin_scope();
         self.consume(token::Type::LParen, "Expect '(' after 'for'")?;
         // initializer clause
-        if self.advance_if(token::Type::Semicolon)? {
+        if self.advance_if(token::Type::Semicolon) {
             // no initializer
-        } else if self.advance_if(token::Type::Var)? {
+        } else if self.advance_if(token::Type::Var) {
             self.var_declaration()?;
         } else {
             self.expression_statement()?;
@@ -353,7 +352,7 @@ impl<'a> Compiler<'a> {
         let mut loop_start = self.chunk.instructions_count();
 
         // conditional clause
-        let exit_jump = if !self.advance_if(token::Type::Semicolon)? {
+        let exit_jump = if !self.advance_if(token::Type::Semicolon) {
             // conditional expression
             self.expression()?;
             self.consume(token::Type::Semicolon, "Expect ';' after loop condition.")?;
@@ -367,7 +366,7 @@ impl<'a> Compiler<'a> {
         };
 
         // increment clause
-        if !self.advance_if(token::Type::RParen)? {
+        if !self.advance_if(token::Type::RParen) {
             // immediately jump to the loop's body, skipping the increment expression
             let body_jump = self.emit_jump(OpCode::Jump(0xFFFF));
             let increment_start = self.chunk.instructions_count();
@@ -408,7 +407,7 @@ impl<'a> Compiler<'a> {
 
     fn expression_statement(&mut self) -> Result<(), ParseError> {
         self.expression()?;
-        self.consume(token::Type::Semicolon, "Expect ';' after value")?;
+        self.consume(token::Type::Semicolon, "Expect ';' after expression")?;
         self.emit(OpCode::Pop);
         Ok(())
     }
@@ -446,7 +445,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn binary(&mut self) -> Result<(), ParseError> {
-        let token_type = self.prev_token.typ;
+        let token_type = self.previous_token.typ;
         self.parse_precedence(Precedence::of(token_type).next())?;
         match token_type {
             token::Type::BangEqual => {
@@ -474,7 +473,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn unary(&mut self) -> Result<(), ParseError> {
-        match self.prev_token.typ {
+        let token_type = self.previous_token.typ;
+        self.parse_precedence(Precedence::Unary)?;
+        match token_type {
             token::Type::Bang => self.emit(OpCode::Not),
             token::Type::Minus => self.emit(OpCode::Negate),
             _ => unreachable!("Rule table is wrong."),
@@ -483,16 +484,16 @@ impl<'a> Compiler<'a> {
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
-        let (op_get, op_set) = if let Some(local) = self.resolve_local(&self.prev_token)? {
+        let (op_get, op_set) = if let Some(local) = self.resolve_local(&self.previous_token)? {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
         } else {
             let ident_id = self
                 .chunk
-                .write_const(Value::String(intern::id(self.prev_token.lexeme)));
+                .write_const(Value::String(intern::id(self.previous_token.lexeme)));
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
         };
 
-        if can_assign && self.advance_if(token::Type::Equal)? {
+        if can_assign && self.advance_if(token::Type::Equal) {
             self.expression()?;
             self.emit(op_set);
         } else {
@@ -523,13 +524,13 @@ impl<'a> Compiler<'a> {
 
     fn string(&mut self) {
         let constant = self.chunk.write_const(Value::String(intern::id(
-            &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1],
+            &self.previous_token.lexeme[1..self.previous_token.lexeme.len() - 1],
         )));
         self.emit(OpCode::Constant(constant));
     }
 
     fn number(&mut self) {
-        let value = intern::str(intern::id(self.prev_token.lexeme))
+        let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
         let constant = self.chunk.write_const(Value::Number(value));
@@ -537,7 +538,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn literal(&mut self) {
-        match self.prev_token.typ {
+        match self.previous_token.typ {
             token::Type::False => self.emit(OpCode::False),
             token::Type::Nil => self.emit(OpCode::Nil),
             token::Type::True => self.emit(OpCode::True),
@@ -552,32 +553,27 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
-        self.advance()?;
+        self.advance();
         let can_assign = precedence <= Precedence::Assignment;
         self.prefix_rule(can_assign)?;
 
-        loop {
-            match self.peek() {
-                None => break,
-                Some(tok) if precedence > Precedence::of(tok.typ) => break,
-                _ => {}
-            }
-            self.advance()?;
+        while precedence <= Precedence::of(self.current_token.typ) {
+            self.advance();
             self.infix_rule()?;
         }
 
-        if can_assign && self.advance_if(token::Type::Equal)? {
+        if can_assign && self.advance_if(token::Type::Equal) {
             return Err(ParseError::UnexpectedToken(
-                self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
-                "Invalid assignment target"
+                self.previous_token.pos,
+                self.previous_token.lexeme.to_string(),
+                "Invalid assignment target",
             ));
         }
         Ok(())
     }
 
     fn prefix_rule(&mut self, can_assign: bool) -> Result<(), ParseError> {
-        match self.prev_token.typ {
+        match self.previous_token.typ {
             token::Type::LParen => self.grouping()?,
             token::Type::Minus | token::Type::Bang => self.unary()?,
             token::Type::Ident => self.variable(can_assign)?,
@@ -586,8 +582,8 @@ impl<'a> Compiler<'a> {
             token::Type::True | token::Type::False | token::Type::Nil => self.literal(),
             _ => {
                 return Err(ParseError::UnexpectedToken(
-                    self.prev_token.pos,
-                    self.prev_token.lexeme.to_string(),
+                    self.previous_token.pos,
+                    self.previous_token.lexeme.to_string(),
                     "Expect expression",
                 ))
             }
@@ -596,7 +592,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn infix_rule(&mut self) -> Result<(), ParseError> {
-        match self.prev_token.typ {
+        match self.previous_token.typ {
             token::Type::Or => self.or(),
             token::Type::And => self.and(),
             token::Type::Minus
@@ -610,95 +606,69 @@ impl<'a> Compiler<'a> {
             | token::Type::Less
             | token::Type::LessEqual => self.binary(),
             _ => Err(ParseError::UnexpectedToken(
-                self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+                self.previous_token.pos,
+                self.previous_token.lexeme.to_string(),
                 "Expect expression",
             )),
         }
     }
 
     fn synchronize(&mut self) {
-        while self.peek().is_some() {
-            self.advance().expect("We have peeked.");
-            if self.prev_token.typ == token::Type::Eof
-                || self.prev_token.typ == token::Type::Semicolon
-            {
-                return;
+        while self.current_token.typ != token::Type::Eof {
+            if self.previous_token.typ == token::Type::Semicolon {
+                match self.current_token.typ {
+                    token::Type::RParen | token::Type::RBrace => {}
+                    _ => return,
+                }
             }
+            match self.current_token.typ {
+                token::Type::Class
+                | token::Type::Fun
+                | token::Type::Var
+                | token::Type::For
+                | token::Type::If
+                | token::Type::While
+                | token::Type::Print
+                | token::Type::Return => return,
+                _ => {}
+            }
+            self.advance();
+        }
+    }
 
-            if let Some(tok) = self.peek() {
-                match tok.typ {
-                    token::Type::Class
-                    | token::Type::Fun
-                    | token::Type::Var
-                    | token::Type::For
-                    | token::Type::If
-                    | token::Type::While
-                    | token::Type::Print
-                    | token::Type::Return => return,
-                    _ => {}
+    fn advance(&mut self) {
+        loop {
+            match self.scanner.scan() {
+                Err(err) => {
+                    eprintln!("{}", err);
+                    self.had_error = true;
+                }
+                Ok(tok) => {
+                    self.previous_token = std::mem::replace(&mut self.current_token, tok);
+                    break;
                 }
             }
         }
     }
 
-    fn peek(&mut self) -> Option<&Token> {
-        while let Some(Err(err)) = self.tokens.peek() {
-            eprintln!("{}", err);
-            self.had_error = true;
-            self.tokens.next();
+    fn advance_if(&mut self, typ: token::Type) -> bool {
+        if self.current_token.typ != typ {
+            return false;
         }
-        self.tokens.peek().map(|peeked| match peeked {
-            Err(_) => unreachable!("Errors should have been skipped."),
-            Ok(tok) => tok,
-        })
-    }
-
-    fn advance(&mut self) -> Result<(), ParseError> {
-        while let Some(Err(err)) = self.tokens.peek() {
-            eprintln!("{}", err);
-            self.had_error = true;
-            self.tokens.next();
-        }
-        self.prev_token = self
-            .tokens
-            .next()
-            .map(|tok| tok.expect("All errors have been skipped."))
-            .expect("Should have stopped when encountered token::Type::Eof.");
-        Ok(())
-    }
-
-    fn advance_if(&mut self, typ: token::Type) -> Result<bool, ParseError> {
-        if let Some(Ok(tok)) = self.tokens.peek() {
-            if tok.typ == typ {
-                self.advance()?;
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        self.advance();
+        true
     }
 
     fn consume(&mut self, typ: token::Type, msg: &'static str) -> Result<(), ParseError> {
-        match self.tokens.peek() {
-            Some(Ok(tok)) => {
-                if tok.typ == typ {
-                    self.advance()?;
-                    Ok(())
-                } else {
-                    Err(ParseError::UnexpectedToken(
-                        tok.pos,
-                        self.prev_token.lexeme.to_string(),
-                        msg,
-                    ))
-                }
-            }
-            None => Err(ParseError::UnexpectedToken(
-                self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+        if self.current_token.typ != typ {
+            return Err(ParseError::UnexpectedToken(
+                self.current_token.pos,
+                self.current_token.lexeme.to_string(),
                 msg,
-            )),
-            Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
+            ));
         }
+        self.advance();
+        Ok(())
     }
 }
 

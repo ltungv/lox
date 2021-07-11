@@ -19,7 +19,7 @@ pub enum RuntimeError {
 #[derive(Debug)]
 pub enum ParseError {
     /// Exceeds limits set by Lox specifications
-    ExceedLimit(Position, String, &'static str),
+    JumpTooLarge(Position, String, &'static str),
     /// Violations of declaration semantics
     InvalidDeclaration(Position, String, &'static str),
     /// Current token is not supposed to be there
@@ -75,7 +75,7 @@ impl fmt::Display for ParseError {
             }
         };
         match self {
-            Self::ExceedLimit(ref p, ref lexeme, ref msg) => {
+            Self::JumpTooLarge(ref p, ref lexeme, ref msg) => {
                 write!(f, "{} Error at {}: {}.", p, at(lexeme), msg,)
             }
             Self::InvalidDeclaration(ref p, ref lexeme, ref msg) => {

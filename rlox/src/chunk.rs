@@ -95,7 +95,13 @@ impl fmt::Display for Value {
         match self {
             Self::Nil => write!(f, "nil"),
             Self::Bool(b) => write!(f, "{}", b),
-            Self::Number(n) => write!(f, "{}", n),
+            Self::Number(n) => {
+                if n.trunc().eq(n) {
+                    write!(f, "{:.0?}", n)
+                } else {
+                    write!(f, "{:?}", n)
+                }
+            }
             Value::String(id) => write!(f, "{}", intern::str(*id)),
         }
     }
