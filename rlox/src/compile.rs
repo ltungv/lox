@@ -147,9 +147,10 @@ impl<'a> Compiler<'a> {
         // +1 because the offset also takes into account the newly emitted loop opcode
         let offset = self.chunk.instructions_count() - loop_start + 1;
         if offset > u16::MAX as usize {
-            return Err(ParseError::JumpTooLarge(
+            return Err(ParseError::ExceedLimit(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
+                "Loop body too large",
             ));
         }
         self.chunk
@@ -214,9 +215,10 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
         if self.locals.len() == MAX_STACK_SIZE {
-            return Err(ParseError::TooManyLocalVariables(
+            return Err(ParseError::InvalidDeclaration(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
+                "Too many local variables in function",
             ));
         }
 
@@ -226,9 +228,10 @@ impl<'a> Compiler<'a> {
                 break;
             }
             if l.name == name {
-                return Err(ParseError::VariableRedeclaration(
+                return Err(ParseError::InvalidDeclaration(
                     self.prev_token.pos,
                     self.prev_token.lexeme.to_string(),
+                    "Already variable with this name in this scope",
                 ));
             }
         }
@@ -308,9 +311,10 @@ impl<'a> Compiler<'a> {
     fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
         let offset = self.chunk.instructions_count() - jump;
         if offset > u16::MAX as usize {
-            return Err(ParseError::JumpTooLarge(
+            return Err(ParseError::ExceedLimit(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
+                "Too much code to jump over",
             ));
         }
         self.chunk.patch_jump_instruction(jump - 1, offset as u16);
@@ -507,9 +511,10 @@ impl<'a> Compiler<'a> {
                 if l.initialized {
                     Ok(i as u8)
                 } else {
-                    Err(ParseError::SelfReferencingInitializer(
+                    Err(ParseError::InvalidDeclaration(
                         name.pos,
                         name.lexeme.to_string(),
+                        "Can't read local variable in its own initializer",
                     ))
                 }
             })
@@ -562,9 +567,10 @@ impl<'a> Compiler<'a> {
         }
 
         if can_assign && self.advance_if(token::Type::Equal)? {
-            return Err(ParseError::InvalidAssignTarget(
+            return Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
+                "Invalid assignment target"
             ));
         }
         Ok(())
@@ -582,7 +588,7 @@ impl<'a> Compiler<'a> {
                 return Err(ParseError::UnexpectedToken(
                     self.prev_token.pos,
                     self.prev_token.lexeme.to_string(),
-                    "Expect expression".to_string(),
+                    "Expect expression",
                 ))
             }
         }
@@ -606,7 +612,7 @@ impl<'a> Compiler<'a> {
             _ => Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
-                "Expect expression".to_string(),
+                "Expect expression",
             )),
         }
     }
@@ -658,7 +664,7 @@ impl<'a> Compiler<'a> {
             .tokens
             .next()
             .map(|tok| tok.expect("All errors have been skipped."))
-            .ok_or(ParseError::UnexpectedEof)?;
+            .expect("Should have stopped when encountered token::Type::Eof.");
         Ok(())
     }
 
@@ -672,7 +678,7 @@ impl<'a> Compiler<'a> {
         Ok(false)
     }
 
-    fn consume(&mut self, typ: token::Type, msg: &str) -> Result<(), ParseError> {
+    fn consume(&mut self, typ: token::Type, msg: &'static str) -> Result<(), ParseError> {
         match self.tokens.peek() {
             Some(Ok(tok)) => {
                 if tok.typ == typ {
@@ -682,14 +688,14 @@ impl<'a> Compiler<'a> {
                     Err(ParseError::UnexpectedToken(
                         tok.pos,
                         self.prev_token.lexeme.to_string(),
-                        msg.to_string(),
+                        msg,
                     ))
                 }
             }
             None => Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
-                msg.to_string(),
+                msg,
             )),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
         }

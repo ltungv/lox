@@ -5,17 +5,12 @@ use crate::Position;
 /// Virtual machine errors
 #[derive(Debug)]
 pub enum RuntimeError {
-    /// Pus on an full stack
+    /// Push on an full stack
     StackOverflow,
     /// Pop on an empty stack
     StackUnderflow,
-    /// Wrong arguments given to binary add operators that only accept two numbers
-    /// or two strings
-    InvalidAddOperands(Position),
-    /// Wrong arguments given to binary operators that only accept numbers
-    ExpectedTwoNumbers(Position),
-    /// Wrong arguments given to unary operators that only accept a numbers
-    ExpectedOneNumber(Position),
+    /// Operand(s) given to an opcode is invalid
+    InvalidOperand(Position, &'static str),
     /// Accessing an undefined variable
     UndefinedVariable(Position, String),
 }
@@ -23,22 +18,12 @@ pub enum RuntimeError {
 /// Error while parsing Lox tokens
 #[derive(Debug)]
 pub enum ParseError {
-    /// Loop body exceeds u16::MAX bytes
-    LoopTooLarge(Position, String),
-    /// Range to jump over exceeds u16
-    JumpTooLarge(Position, String),
-    /// Can not use variable name in its initializer
-    SelfReferencingInitializer(Position, String),
-    /// A named can only be declared as variable once in local scope
-    VariableRedeclaration(Position, String),
-    /// The number of local variables can not exceed the maximum stack size
-    TooManyLocalVariables(Position, String),
-    /// Can not assign a value to the LHS
-    InvalidAssignTarget(Position, String),
+    /// Exceeds limits set by Lox specifications
+    ExceedLimit(Position, String, &'static str),
+    /// Violations of declaration semantics
+    InvalidDeclaration(Position, String, &'static str),
     /// Current token is not supposed to be there
-    UnexpectedToken(Position, String, String),
-    /// Reached EOF abruptly
-    UnexpectedEof,
+    UnexpectedToken(Position, String, &'static str),
 }
 
 /// Error while scanning Lox source code
@@ -69,20 +54,10 @@ impl fmt::Display for RuntimeError {
             Self::StackUnderflow => {
                 write!(f, "Virtual machine's stack underflows.")
             }
-            Self::InvalidAddOperands(p) => {
-                write!(
-                    f,
-                    "Operands must be two numbers or two strings.\n{} in script.",
-                    p
-                )
+            Self::InvalidOperand(ref p, ref msg) => {
+                write!(f, "{}.\n{} in script.", msg, p)
             }
-            Self::ExpectedTwoNumbers(p) => {
-                write!(f, "Operands must be numbers.\n{} in script.", p)
-            }
-            Self::ExpectedOneNumber(p) => {
-                write!(f, "Operand must be a number.\n{} in script.", p)
-            }
-            Self::UndefinedVariable(p, name) => {
+            Self::UndefinedVariable(ref p, ref name) => {
                 write!(f, "Undefined variable '{}'.\n{} in script.", name, p)
             }
         }
@@ -100,58 +75,15 @@ impl fmt::Display for ParseError {
             }
         };
         match self {
-            Self::LoopTooLarge(p, lexeme) => {
-                write!(
-                    f,
-                    "{} Error at {}: Too much code to jump over.",
-                    p,
-                    at(lexeme)
-                )
+            Self::ExceedLimit(ref p, ref lexeme, ref msg) => {
+                write!(f, "{} Error at {}: {}.", p, at(lexeme), msg,)
             }
-            Self::JumpTooLarge(p, lexeme) => {
-                write!(
-                    f,
-                    "{} Error at {}: Too much code to jump over.",
-                    p,
-                    at(lexeme)
-                )
-            }
-            Self::SelfReferencingInitializer(p, lexeme) => {
-                write!(
-                    f,
-                    "{} Error at {}: Can't read local variable in its own initializer.",
-                    p,
-                    at(lexeme)
-                )
-            }
-            Self::VariableRedeclaration(p, lexeme) => {
-                write!(
-                    f,
-                    "{} Error at {}: Already variable with this name in this scope.",
-                    p,
-                    at(lexeme)
-                )
-            }
-            Self::TooManyLocalVariables(p, lexeme) => {
-                write!(
-                    f,
-                    "{} Error at {}: Too many local variables in function.",
-                    p,
-                    at(lexeme),
-                )
-            }
-            Self::InvalidAssignTarget(p, lexeme) => {
-                write!(
-                    f,
-                    "{} Error at {}: Invalid assignment target.",
-                    p,
-                    at(lexeme)
-                )
+            Self::InvalidDeclaration(ref p, ref lexeme, ref msg) => {
+                write!(f, "{} Error at {}: {}.", p, at(lexeme), msg,)
             }
             Self::UnexpectedToken(ref pos, ref lexeme, ref msg) => {
                 write!(f, "{} Error at {}: {}.", pos, at(lexeme), msg)
             }
-            Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
         }
     }
 }
@@ -160,8 +92,8 @@ impl std::error::Error for ScanError {}
 impl fmt::Display for ScanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnterminatedString(pos) => write!(f, "{} Error: Unterminated string.", pos),
-            Self::UnexpectedCharacter(pos, c) => {
+            Self::UnterminatedString(ref pos) => write!(f, "{} Error: Unterminated string.", pos),
+            Self::UnexpectedCharacter(ref pos, ref c) => {
                 write!(f, "{} Error: Unexpected character '{}'.", pos, c)
             }
         }

@@ -136,7 +136,12 @@ impl VM {
                     Value::Number(v) => {
                         *v = -*v;
                     }
-                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operand must be a number",
+                        ))
+                    }
                 },
                 OpCode::Equal => {
                     let v2 = self.pop()?;
@@ -149,7 +154,12 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Bool(n1 > n2);
                     }
-                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operands must be numbers",
+                        ))
+                    }
                 },
                 OpCode::Less => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -157,7 +167,12 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Bool(n1 < n2);
                     }
-                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operands must be numbers",
+                        ))
+                    }
                 },
                 OpCode::Add => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -173,7 +188,12 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::String(intern::id(res));
                     }
-                    _ => return Err(RuntimeError::InvalidAddOperands(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operands must be two numbers or two strings",
+                        ))
+                    }
                 },
                 OpCode::Subtract => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -181,7 +201,12 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Number(n1 - n2);
                     }
-                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operands must be numbers",
+                        ))
+                    }
                 },
                 OpCode::Multiply => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -189,7 +214,12 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Number(n1 * n2);
                     }
-                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operands must be numbers",
+                        ))
+                    }
                 },
                 OpCode::Divide => match (self.peek(0)?, self.peek(1)?) {
                     (&Value::Number(n2), &Value::Number(n1)) => {
@@ -197,7 +227,12 @@ impl VM {
                         let v1 = self.peek_mut(0)?;
                         *v1 = Value::Number(n1 / n2);
                     }
-                    _ => return Err(RuntimeError::ExpectedTwoNumbers(*pos)),
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            *pos,
+                            "Operands must be numbers",
+                        ))
+                    }
                 },
             }
         }
