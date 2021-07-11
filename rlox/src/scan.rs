@@ -3,7 +3,6 @@ use std::str::Chars;
 use itertools::{self, MultiPeek};
 
 use crate::{
-    intern,
     token::{self, Token},
     Position, ScanError,
 };
@@ -35,7 +34,7 @@ impl<'s> Scanner<'s> {
     }
 
     /// Consume and return the next token from source.
-    fn scan(&mut self) -> Result<Option<Token>, ScanError> {
+    fn scan(&mut self) -> Result<Option<Token<'s>>, ScanError> {
         if self.finished {
             return Ok(None);
         }
@@ -47,7 +46,7 @@ impl<'s> Scanner<'s> {
                 self.finished = true;
                 return Ok(Some(Token {
                     typ: token::Type::Eof,
-                    lexeme: intern::id(""),
+                    lexeme: "",
                     pos: self.pos,
                 }));
             }
@@ -103,7 +102,7 @@ impl<'s> Scanner<'s> {
         }))
     }
 
-    fn identity(&mut self) -> Token {
+    fn identity(&mut self) -> Token<'s> {
         while self.peek_check(|c| is_alpha(c) || is_digit(c)) {
             self.advance();
         }
@@ -128,7 +127,7 @@ impl<'s> Scanner<'s> {
         })
     }
 
-    fn number(&mut self) -> Token {
+    fn number(&mut self) -> Token<'s> {
         while self.peek_check(is_digit) {
             self.advance();
         }
@@ -141,7 +140,7 @@ impl<'s> Scanner<'s> {
         self.make_token(token::Type::Number)
     }
 
-    fn string(&mut self) -> Result<Token, ScanError> {
+    fn string(&mut self) -> Result<Token<'s>, ScanError> {
         while self.peek_check(|c| c != '"') {
             self.advance();
         }
@@ -215,22 +214,17 @@ impl<'s> Scanner<'s> {
         }
     }
 
-    fn make_token(&mut self, typ: token::Type) -> Token {
-        let lexeme = if typ == token::Type::String {
-            intern::id(&self.src[self.lexeme_begin + 1..self.lexeme_end - 1])
-        } else {
-            intern::id(&self.src[self.lexeme_begin..self.lexeme_end])
-        };
+    fn make_token(&mut self, typ: token::Type) -> Token<'s> {
         Token {
             typ,
-            lexeme,
+            lexeme: &self.src[self.lexeme_begin..self.lexeme_end],
             pos: self.pos,
         }
     }
 }
 
 impl<'s> IntoIterator for Scanner<'s> {
-    type Item = Result<Token, ScanError>;
+    type Item = Result<Token<'s>, ScanError>;
     type IntoIter = Iter<'s>;
     fn into_iter(self) -> Self::IntoIter {
         Iter { scanner: self }
@@ -244,7 +238,7 @@ pub struct Iter<'s> {
 }
 
 impl<'s> Iterator for Iter<'s> {
-    type Item = Result<Token, ScanError>;
+    type Item = Result<Token<'s>, ScanError>;
     fn next(&mut self) -> Option<Self::Item> {
         self.scanner.scan().transpose()
     }

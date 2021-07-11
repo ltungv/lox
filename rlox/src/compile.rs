@@ -1,7 +1,8 @@
 use std::iter::Peekable;
 
 use crate::{
-    intern, scan, token, Chunk, OpCode, ParseError, Position, Scanner, Token, Value, MAX_STACK_SIZE,
+    intern, scan, token, Chunk, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
+    MAX_STACK_SIZE,
 };
 
 /// Scan for tokens and emit corresponding bytecodes.
@@ -84,7 +85,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Compiler<'a> {
     tokens: Peekable<scan::Iter<'a>>,
-    prev_token: Token,
+    prev_token: Token<'a>,
     had_error: bool,
 
     chunk: Chunk,
@@ -99,7 +100,7 @@ impl<'a> Compiler<'a> {
             tokens: Scanner::new(src).into_iter().peekable(),
             prev_token: Token {
                 typ: token::Type::Eof,
-                lexeme: intern::id(""),
+                lexeme: "",
                 pos: Position::default(),
             },
             had_error: false,
@@ -150,24 +151,25 @@ impl<'a> Compiler<'a> {
         if self.locals.len() == MAX_STACK_SIZE {
             return Err(ParseError::TooManyLocalVariables(
                 self.prev_token.pos,
-                intern::str(self.prev_token.lexeme),
+                self.prev_token.lexeme.to_string(),
             ));
         }
 
-        let name = self.prev_token.clone();
+        let name = intern::id(self.prev_token.lexeme);
         for l in self.locals.iter() {
             if l.initialized && l.depth < self.scope_depth {
                 break;
             }
-            if l.name.lexeme == name.lexeme {
+            if l.name == name {
                 return Err(ParseError::VariableRedeclaration(
                     self.prev_token.pos,
-                    intern::str(self.prev_token.lexeme),
+                    self.prev_token.lexeme.to_string(),
                 ));
             }
         }
 
-        self.locals.push((name, self.scope_depth).into());
+        self.locals
+            .push((name, self.scope_depth).into());
         Ok(())
     }
 
@@ -179,7 +181,7 @@ impl<'a> Compiler<'a> {
             0 // A dummy value used when we're not in the global scope
         } else {
             self.chunk
-                .write_const(Value::String(self.prev_token.lexeme))
+                .write_const(Value::String(intern::id(self.prev_token.lexeme)))
         };
         // initializer
         if self.advance_if(token::Type::Equal)? {
@@ -304,14 +306,14 @@ impl<'a> Compiler<'a> {
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, l)| l.name.lexeme == name.lexeme)
+            .find(|(_, l)| l.name == intern::id(name.lexeme))
             .map(|(i, l)| {
                 if l.initialized {
                     Ok(i as u8)
                 } else {
                     Err(ParseError::SelfReferencingInitializer(
                         name.pos,
-                        intern::str(name.lexeme),
+                        name.lexeme.to_string(),
                     ))
                 }
             })
@@ -324,7 +326,7 @@ impl<'a> Compiler<'a> {
         } else {
             let ident_id = self
                 .chunk
-                .write_const(Value::String(self.prev_token.lexeme));
+                .write_const(Value::String(intern::id(self.prev_token.lexeme)));
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
         };
 
@@ -340,12 +342,12 @@ impl<'a> Compiler<'a> {
     fn string(&mut self) {
         let constant = self
             .chunk
-            .write_const(Value::String(self.prev_token.lexeme));
+            .write_const(Value::String(intern::id(self.prev_token.lexeme)));
         self.emit(OpCode::Constant(constant));
     }
 
     fn number(&mut self) {
-        let value = intern::str(self.prev_token.lexeme)
+        let value = intern::str(intern::id(self.prev_token.lexeme))
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
         let constant = self.chunk.write_const(Value::Number(value));
@@ -385,7 +387,7 @@ impl<'a> Compiler<'a> {
         if can_assign && self.advance_if(token::Type::Equal)? {
             return Err(ParseError::InvalidAssignTarget(
                 self.prev_token.pos,
-                intern::str(self.prev_token.lexeme),
+                self.prev_token.lexeme.to_string(),
             ));
         }
         Ok(())
@@ -402,7 +404,7 @@ impl<'a> Compiler<'a> {
             _ => {
                 return Err(ParseError::UnexpectedToken(
                     self.prev_token.pos,
-                    intern::str(self.prev_token.lexeme),
+                    self.prev_token.lexeme.to_string(),
                     "Expect expression".to_string(),
                 ))
             }
@@ -424,7 +426,7 @@ impl<'a> Compiler<'a> {
             | token::Type::LessEqual => self.binary(),
             _ => Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
-                intern::str(self.prev_token.lexeme),
+                self.prev_token.lexeme.to_string(),
                 "Expect expression".to_string(),
             )),
         }
@@ -500,14 +502,14 @@ impl<'a> Compiler<'a> {
                 } else {
                     Err(ParseError::UnexpectedToken(
                         tok.pos,
-                        intern::str(tok.lexeme),
+                        self.prev_token.lexeme.to_string(),
                         msg.to_string(),
                     ))
                 }
             }
             None => Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
-                intern::str(self.prev_token.lexeme),
+                self.prev_token.lexeme.to_string(),
                 msg.to_string(),
             )),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
@@ -518,13 +520,13 @@ impl<'a> Compiler<'a> {
 /// Store name and depth of the resolved identifer.
 #[derive(Debug)]
 struct Local {
-    name: Token,
+    name: StringId,
     depth: usize,
     initialized: bool,
 }
 
-impl<'t> From<(Token, usize)> for Local {
-    fn from((name, depth): (Token, usize)) -> Self {
+impl From<(StringId, usize)> for Local {
+    fn from((name, depth): (StringId, usize)) -> Self {
         Self {
             name,
             depth,
