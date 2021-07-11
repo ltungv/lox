@@ -1,41 +1,156 @@
-//! This module deals with chunks of bytecodes.
-
-use std::collections::HashMap;
 use std::fmt;
 
-/// Chunk is a sequence of bytecode.
+use crate::{intern, Position, StringId};
+
+/// OpCode is a number that specifies the type of the instruction.
+///
+/// # Notes
+///
+/// If it was for performances purposes, the following options could be considered:
+/// + Having the opcode designed to be as close as possbible to existing lower-level instructions
+/// + Having specialized opcode for constant
+///
+/// We don't have a `OpCode::NotEqual` because we will transform `a != b` to `!(a == b)` to demonstrated
+/// that bytecode can deviate from the actual user's code as long as they behave similarly. This is
+/// also applied for operator `<=` and operator `>=`.
+///
+/// `a <= b` does not equals equivalent to `!(a > b)`, similarly with greater and greater or equal.
+/// According to [IEEE 754] all comparison operators return `false` when an operand is `NaN`. These
+/// are implementation details that we should keep in mind when making a real language.
+///
+/// [IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum OpCode {
+    /// Pop the top of the stack
+    Pop,
+    /// Print an expression in human readable format
+    Print,
+    /// Return from the current function
+    Return,
+    /// Set the value of a global variable
+    GetLocal(u8),
+    /// Set the value of a local variable
+    SetLocal(u8),
+    /// Pop the top of the stack and define a variable initialized with that value.
+    DefineGlobal(u8),
+    /// Get the value of a global variable
+    GetGlobal(u8),
+    /// Set the value of a global variable
+    SetGlobal(u8),
+    /// Load a constant
+    Constant(u8),
+    /// Load a `nil` value
+    Nil,
+    /// Load a `true` value
+    True,
+    /// Load a `false` value
+    False,
+    /// Apply logical `not` to a single boolean operand
+    Not,
+    /// Negate a single number operand
+    Negate,
+    /// Check for equality between 2 operands.
+    Equal,
+    /// Compare if the first operand is greater than the second
+    Greater,
+    /// Compare if the first operand is less than the second
+    Less,
+    /// Add two number operands or two string operands
+    Add,
+    /// Subtract two number operands
+    Subtract,
+    /// Multiply two number operands
+    Multiply,
+    /// Divide two number operands
+    Divide,
+}
+
+/// This represents a Lox type and its data at.
+#[derive(Debug, Clone)]
+pub enum Value {
+    /// A nothing value in Lox
+    Nil,
+    /// A boolean value in Lox
+    Bool(bool),
+    /// A number value in Lox
+    Number(f64),
+    /// A heap allocated string
+    ///
+    /// # Notes
+    ///
+    /// To improve memory usage, we should separated string into 2 types, one that owns its
+    /// character array and one that is "constant" such that it points to the original source
+    /// or some non-freeable location.
+    String(StringId),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            Self::Nil => write!(f, "nil"),
+            Self::Bool(b) => write!(f, "{}", b),
+            Self::Number(n) => write!(f, "{}", n),
+            Value::String(id) => write!(f, "{}", intern::str(*id)),
+        }
+    }
+}
+
+impl Value {
+    /// Return true if the value is `nil` or `false`. Otherwise, return false.
+    pub fn is_falsey(&self) -> bool {
+        match self {
+            Self::Bool(b) => !b,
+            Self::Nil => true,
+            _ => false,
+        }
+    }
+
+    /// Check for equality between two values of the same type. If the operands are of different
+    /// types, return `false`.
+    pub fn equal(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Self::Nil, Self::Nil) => true,
+            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
+            (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
+            (Self::String(s1), Self::String(s2)) => s1 == s2,
+            _ => false,
+        }
+    }
+}
+
+/// A chunk holds a sequence of instructions to be executes and their data
+///
+/// ```
+/// use rlox::{Chunk, OpCode, Position, Value};
+///
+/// let mut chunk = Chunk::default();
+/// let const_id = chunk.write_const(Value::Number(1.0));
+/// assert!(matches!(chunk.read_const(const_id), &Value::Number(1.0)));
+///
+/// chunk.write_instruction(OpCode::Constant(const_id), Position::default());
+/// assert!(matches!(
+///     chunk.read_instruction(0),
+///     (&OpCode::Constant(cost_id), &Position { line: 1, column : 1 }),
+/// ));
+/// ```
 #[derive(Default, Debug)]
 pub struct Chunk {
     instructions: Vec<OpCode>,
     constants: Vec<Value>,
-    line_run_length: HashMap<usize, usize>,
+    positions: Vec<Position>,
 }
 
 impl Chunk {
     /// Add a new instruction to the chunk.
-    pub fn write_instruction(&mut self, code: OpCode, line: usize) {
+    pub fn write_instruction(&mut self, code: OpCode, pos: Position) {
         self.instructions.push(code);
-        *self.line_run_length.entry(line).or_default() += 1;
+        self.positions.push(pos);
     }
 
     /// Read the instruction at the index.
-    pub fn read_instruction(&self, idx: usize) -> &OpCode {
-        &self.instructions[idx]
-    }
-
-    /// Determine the line where the instruction at the given index occured.
-    pub fn instruction_line(&self, code_idx: usize) -> usize {
-        let mut lines: Vec<_> = self.line_run_length.keys().copied().collect();
-        lines.sort_unstable();
-
-        let mut offset = 0;
-        for line in &lines {
-            offset += self.line_run_length[line];
-            if code_idx < offset {
-                return *line;
-            }
-        }
-        return lines.last().copied().unwrap_or(0);
+    pub fn read_instruction(&self, idx: usize) -> (&OpCode, &Position) {
+        (&self.instructions[idx], &self.positions[idx])
     }
 
     /// Add a constant value to the chunk and return it position in the Vec
@@ -47,57 +162,6 @@ impl Chunk {
     /// Read the constant at the given index
     pub fn read_const(&self, idx: u8) -> &Value {
         &self.constants[idx as usize]
-    }
-}
-
-/// OpCode is a number that specifies the type of the instruction.
-#[derive(Debug, Clone)]
-#[repr(u8)]
-pub enum OpCode {
-    /// Load a constant
-    Constant(u8),
-    /// Return from the current function.
-    Return,
-    /// Operator that has one operand
-    Unary(UnaryOp),
-    /// Operator that has two operands
-    Binary(BinaryOp),
-}
-
-/// All operators that have one operand
-#[derive(Debug, Clone)]
-#[repr(u8)]
-pub enum UnaryOp {
-    /// Negate the single operand
-    Negate,
-}
-
-/// All operators that have two operands
-#[derive(Debug, Clone)]
-#[repr(u8)]
-pub enum BinaryOp {
-    /// Add two operands
-    Add,
-    /// Subtract the first operand with the second operand
-    Subtract,
-    /// Multiply two operands
-    Multiply,
-    /// Divide the first operand with the second operand
-    Divide,
-}
-
-/// This represents a Lox type and its data at.
-#[derive(Debug, Clone)]
-pub enum Value {
-    /// A number value in Lox
-    Number(f64),
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match *self {
-            Self::Number(n) => write!(f, "{}", n),
-        }
     }
 }
 
@@ -114,25 +178,43 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
 #[cfg(debug_assertions)]
 pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
     print!("{:04} ", idx);
-    if idx > 0 && chunk.instruction_line(idx) == chunk.instruction_line(idx - 1) {
+    if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
         print!("   | ");
     } else {
-        print!("{:4} ", chunk.instruction_line(idx));
+        print!("{:4} ", chunk.positions[idx].line);
     }
 
+    let constant_instruction = |op_repr: &str, const_id: u8| {
+        println!(
+            "{:-16} {:4} {}",
+            op_repr,
+            const_id,
+            chunk.read_const(const_id)
+        );
+    };
+    let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);
+
     match chunk.instructions[idx] {
-        OpCode::Constant(ref idx) => {
-            println!("{:-16} {:4} {}", "OP_CONSTANT", idx, chunk.read_const(*idx))
-        }
+        OpCode::Pop => println!("OP_POP"),
+        OpCode::Print => println!("OP_PRINT"),
         OpCode::Return => println!("OP_RETURN"),
-        OpCode::Unary(ref op) => match op {
-            UnaryOp::Negate => println!("OP_NEGATE"),
-        },
-        OpCode::Binary(ref op) => match op {
-            BinaryOp::Add => println!("OP_ADD"),
-            BinaryOp::Subtract => println!("OP_SUBTRACT"),
-            BinaryOp::Multiply => println!("OP_MULTIPLY"),
-            BinaryOp::Divide => println!("OP_DIVIDE"),
-        },
+        OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
+        OpCode::SetLocal(ref slot) => byte_instruction("OP_SET_LOCAL", *slot),
+        OpCode::DefineGlobal(ref const_id) => constant_instruction("OP_DEFINE_GLOBAL", *const_id),
+        OpCode::GetGlobal(ref const_id) => constant_instruction("OP_GET_GLOBAL", *const_id),
+        OpCode::SetGlobal(ref const_id) => constant_instruction("OP_SET_GLOBAL", *const_id),
+        OpCode::Constant(ref const_id) => constant_instruction("OP_CONSTANT", *const_id),
+        OpCode::Nil => println!("OP_NIL"),
+        OpCode::True => println!("OP_TRUE"),
+        OpCode::False => println!("OP_FALSE"),
+        OpCode::Not => println!("OP_NOT"),
+        OpCode::Negate => println!("OP_NEGATE"),
+        OpCode::Equal => println!("OP_EQUAL"),
+        OpCode::Greater => println!("OP_GREATER"),
+        OpCode::Less => println!("OP_LESS"),
+        OpCode::Add => println!("OP_ADD"),
+        OpCode::Subtract => println!("OP_SUBTRACT"),
+        OpCode::Multiply => println!("OP_MULTIPLY"),
+        OpCode::Divide => println!("OP_DIVIDE"),
     }
 }
