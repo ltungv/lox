@@ -315,6 +315,38 @@ impl<'a> Compiler<'a> {
         self.parse_precedence(Precedence::Assignment)
     }
 
+    fn or(&mut self) -> Result<(), ParseError> {
+        // Short-circuit jump.
+        // If the value on top of the stack is falsey, we make a small jump skipping passs the jump
+        // right beneath. Otherwise we go to the jump right beneath us to jump pass the rest of the
+        // operands. This simulates JumpIfTrue without making a new opcode.
+        self.emit(OpCode::JumpIfFalse(0xFFFF));
+        let else_jump = self.chunk.last_instruction_index();
+
+        self.emit(OpCode::Jump(0xFFFF));
+        let end_jump = self.chunk.last_instruction_index();
+
+        self.patch_jump(else_jump)?;
+        // Pop false value if not short-circuited
+        self.emit(OpCode::Pop);
+
+        self.parse_precedence(Precedence::Or)?;
+        self.patch_jump(end_jump)
+    }
+
+    fn and(&mut self) -> Result<(), ParseError> {
+        // Short-circuit jump.
+        // If the value on top of the stack is falsey, jumps pass the rest of the
+        // operands.
+        self.emit(OpCode::JumpIfFalse(0xFFFF));
+        let end_jump = self.chunk.last_instruction_index();
+        // Pop true value if not short-circuited
+        self.emit(OpCode::Pop);
+
+        self.parse_precedence(Precedence::And)?;
+        self.patch_jump(end_jump)
+    }
+
     fn binary(&mut self) -> Result<(), ParseError> {
         let token_type = self.prev_token.typ;
         self.parse_precedence(Precedence::of(token_type).next())?;
@@ -465,6 +497,8 @@ impl<'a> Compiler<'a> {
 
     fn infix_rule(&mut self) -> Result<(), ParseError> {
         match self.prev_token.typ {
+            token::Type::Or => self.or(),
+            token::Type::And => self.and(),
             token::Type::Minus
             | token::Type::Plus
             | token::Type::Slash
@@ -637,13 +671,15 @@ impl Precedence {
 
     fn of(typ: token::Type) -> Self {
         match typ {
-            token::Type::BangEqual | token::Type::EqualEqual => (Precedence::Equality),
+            token::Type::Or => Precedence::Or,
+            token::Type::And => Precedence::And,
+            token::Type::BangEqual | token::Type::EqualEqual => Precedence::Equality,
             token::Type::Greater
             | token::Type::GreaterEqual
             | token::Type::Less
             | token::Type::LessEqual => Precedence::Comparison,
-            token::Type::Minus | token::Type::Plus => (Precedence::Term),
-            token::Type::Slash | token::Type::Star => (Precedence::Factor),
+            token::Type::Minus | token::Type::Plus => Precedence::Term,
+            token::Type::Slash | token::Type::Star => Precedence::Factor,
             _ => Self::None,
         }
     }
