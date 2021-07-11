@@ -193,7 +193,7 @@ impl<'s> Scanner<'s> {
 
     fn advance(&mut self) -> Option<char> {
         self.src_iter.next().map(|c| {
-            self.lexeme_end += 1;
+            self.lexeme_end += c.len_utf8();
             if c == '\n' {
                 self.pos.next_line();
             } else {

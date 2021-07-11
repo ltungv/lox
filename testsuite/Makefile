@@ -1,4 +1,11 @@
 default:
 
+test = all
+
 glox:
-	dart tool/bin/test.dart jlox -i ../glox/target/glox
+	cd ../glox && make build
+	dart tool/bin/test.dart $(test) -i ../glox/target/glox
+
+rlox:
+	cd ../rlox && cargo build --release
+	dart tool/bin/test.dart $(test) -i ../rlox/target/release/rlox

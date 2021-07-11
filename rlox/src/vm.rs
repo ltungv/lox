@@ -57,6 +57,9 @@ impl VM {
                 OpCode::Pop => {
                     self.pop()?;
                 }
+                OpCode::Loop(offset) => {
+                    self.ip -= *offset as usize;
+                }
                 OpCode::Jump(offset) => {
                     self.ip += *offset as usize;
                 }

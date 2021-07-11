@@ -118,7 +118,7 @@ impl Default for Position {
 
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "[line {}, col {}]", self.line, self.column)
+        write!(f, "[line {}]", self.line)
     }
 }
 

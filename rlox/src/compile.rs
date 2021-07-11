@@ -128,13 +128,33 @@ impl<'a> Compiler<'a> {
     /// Return the compiled bytecode chunk if the process finishes without error
     pub fn finish(self) -> Option<Chunk> {
         if self.had_error {
-            return None;
+            None
+        } else {
+            Some(self.chunk)
         }
-        Some(self.chunk)
     }
 
     fn emit(&mut self, op: OpCode) {
         self.chunk.write_instruction(op, self.prev_token.pos);
+    }
+
+    fn emit_jump(&mut self, op: OpCode) -> usize {
+        self.chunk.write_instruction(op, self.prev_token.pos);
+        self.chunk.instructions_count()
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) -> Result<(), ParseError> {
+        // +1 because the offset also takes into account the newly emitted loop opcode
+        let offset = self.chunk.instructions_count() - loop_start + 1;
+        if offset > u16::MAX as usize {
+            return Err(ParseError::JumpTooLarge(
+                self.prev_token.pos,
+                self.prev_token.lexeme.to_string(),
+            ));
+        }
+        self.chunk
+            .write_instruction(OpCode::Loop(offset as u16), self.prev_token.pos);
+        Ok(())
     }
 
     fn declaration(&mut self) -> Result<(), ParseError> {
@@ -218,19 +238,22 @@ impl<'a> Compiler<'a> {
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
-        if self.advance_if(token::Type::LBrace)? {
+        if self.advance_if(token::Type::Print)? {
+            self.print_statement()
+        } else if self.advance_if(token::Type::For)? {
+            self.for_statement()
+        } else if self.advance_if(token::Type::If)? {
+            self.if_statement()
+        } else if self.advance_if(token::Type::While)? {
+            self.while_statement()
+        } else if self.advance_if(token::Type::LBrace)? {
             self.begin_scope();
             self.block()?;
             self.end_scope();
-            return Ok(());
+            Ok(())
+        } else {
+            self.expression_statement()
         }
-        if self.advance_if(token::Type::If)? {
-            return self.if_statement();
-        }
-        if self.advance_if(token::Type::Print)? {
-            return self.print_statement();
-        }
-        self.expression_statement()
     }
 
     fn block(&mut self) -> Result<(), ParseError> {
@@ -264,21 +287,18 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::RParen, "Expect ')' after condition")?;
 
         // This jumps to the else clause
-        self.emit(OpCode::JumpIfFalse(0xFFFF));
-        let then_jump = self.chunk.last_instruction_index();
-
+        let then_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
         // Jump does not pop the conditional out of the stack, so we do it manually.
         // Here we pop the true value.
         self.emit(OpCode::Pop);
         self.statement()?;
 
         // This jumps through the else clause
-        self.emit(OpCode::Jump(0xFFFF));
-        let else_jump = self.chunk.last_instruction_index();
-
+        let else_jump = self.emit_jump(OpCode::Jump(0xFFFF));
         self.patch_jump(then_jump)?;
         // Here we pop the false value.
         self.emit(OpCode::Pop);
+
         if self.advance_if(token::Type::Else)? {
             self.statement()?;
         }
@@ -286,20 +306,98 @@ impl<'a> Compiler<'a> {
     }
 
     fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
-        let offset = self.chunk.last_instruction_index() - jump;
+        let offset = self.chunk.instructions_count() - jump;
         if offset > u16::MAX as usize {
             return Err(ParseError::JumpTooLarge(
                 self.prev_token.pos,
                 self.prev_token.lexeme.to_string(),
             ));
         }
-        self.chunk.patch_jump_instruction(jump, offset as u16);
+        self.chunk.patch_jump_instruction(jump - 1, offset as u16);
+        Ok(())
+    }
+
+    fn while_statement(&mut self) -> Result<(), ParseError> {
+        let loop_start = self.chunk.instructions_count();
+        self.consume(token::Type::LParen, "Expect '(' after 'while'")?;
+        self.expression()?;
+        self.consume(token::Type::RParen, "Expect ')' after condition")?;
+
+        let exit_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+        self.emit(OpCode::Pop);
+
+        self.statement()?;
+        self.emit_loop(loop_start)?;
+
+        self.patch_jump(exit_jump)?;
+        self.emit(OpCode::Pop);
+        Ok(())
+    }
+
+    fn for_statement(&mut self) -> Result<(), ParseError> {
+        self.begin_scope();
+        self.consume(token::Type::LParen, "Expect '(' after 'for'")?;
+        // initializer clause
+        if self.advance_if(token::Type::Semicolon)? {
+            // no initializer
+        } else if self.advance_if(token::Type::Var)? {
+            self.var_declaration()?;
+        } else {
+            self.expression_statement()?;
+        }
+
+        let mut loop_start = self.chunk.instructions_count();
+
+        // conditional clause
+        let exit_jump = if !self.advance_if(token::Type::Semicolon)? {
+            // conditional expression
+            self.expression()?;
+            self.consume(token::Type::Semicolon, "Expect ';' after loop condition.")?;
+            // exit if consitional expression is falsey
+            let exit_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+            // pop true when not jump
+            self.emit(OpCode::Pop);
+            Some(exit_jump)
+        } else {
+            None
+        };
+
+        // increment clause
+        if !self.advance_if(token::Type::RParen)? {
+            // immediately jump to the loop's body, skipping the increment expression
+            let body_jump = self.emit_jump(OpCode::Jump(0xFFFF));
+            let increment_start = self.chunk.instructions_count();
+            // increment expression
+            self.expression()?;
+            // pop expression result
+            self.emit(OpCode::Pop);
+            self.consume(token::Type::RParen, "Expect ')' after for clauses")?;
+
+            // this will loop back to the conditional after the increment expression is run
+            self.emit_loop(loop_start)?;
+            // the loop start to point to the increment expression
+            loop_start = increment_start;
+            self.patch_jump(body_jump)?;
+        }
+
+        self.statement()?;
+        // this will loop back to the increment expression if there is one, otherwise it loops back
+        // to the conditional expression
+        self.emit_loop(loop_start)?;
+
+        if let Some(exit_jump) = exit_jump {
+            self.patch_jump(exit_jump)?;
+            // pop false when get jumped into
+            self.emit(OpCode::Pop);
+        }
+
+        self.end_scope();
         Ok(())
     }
 
     fn print_statement(&mut self) -> Result<(), ParseError> {
         self.expression()?;
-        self.consume(token::Type::Semicolon, "Expect ';' after value")?;
+        self.consume(token::Type::Semicolon, "Expect ';' after for clauses value")?;
         self.emit(OpCode::Print);
         Ok(())
     }
@@ -320,11 +418,8 @@ impl<'a> Compiler<'a> {
         // If the value on top of the stack is falsey, we make a small jump skipping passs the jump
         // right beneath. Otherwise we go to the jump right beneath us to jump pass the rest of the
         // operands. This simulates JumpIfTrue without making a new opcode.
-        self.emit(OpCode::JumpIfFalse(0xFFFF));
-        let else_jump = self.chunk.last_instruction_index();
-
-        self.emit(OpCode::Jump(0xFFFF));
-        let end_jump = self.chunk.last_instruction_index();
+        let else_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+        let end_jump = self.emit_jump(OpCode::Jump(0xFFFF));
 
         self.patch_jump(else_jump)?;
         // Pop false value if not short-circuited
@@ -338,8 +433,7 @@ impl<'a> Compiler<'a> {
         // Short-circuit jump.
         // If the value on top of the stack is falsey, jumps pass the rest of the
         // operands.
-        self.emit(OpCode::JumpIfFalse(0xFFFF));
-        let end_jump = self.chunk.last_instruction_index();
+        let end_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
         // Pop true value if not short-circuited
         self.emit(OpCode::Pop);
 
@@ -423,9 +517,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn string(&mut self) {
-        let constant = self
-            .chunk
-            .write_const(Value::String(intern::id(self.prev_token.lexeme)));
+        let constant = self.chunk.write_const(Value::String(intern::id(
+            &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1],
+        )));
         self.emit(OpCode::Constant(constant));
     }
 

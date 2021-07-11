@@ -23,6 +23,8 @@ use crate::{intern, Position, StringId};
 pub enum OpCode {
     /// Pop the top of the stack
     Pop,
+    /// Jump backward for n instructions
+    Loop(u16),
     /// Jump forward for n instructions
     Jump(u16),
     /// Jump forward for n instructions if current stack top is falsey
@@ -157,8 +159,8 @@ impl Chunk {
     }
 
     /// Return the index of the last written instruction.
-    pub fn last_instruction_index(&self) -> usize {
-        self.instructions.len() - 1
+    pub fn instructions_count(&self) -> usize {
+        self.instructions.len()
     }
 
     /// Replace the jump offset at the given jump instruction
@@ -211,19 +213,21 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         );
     };
     let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);
-    let jump_instruction = |op_repr: &str, jump: usize, offset: u16, sign: usize| {
-        println!(
-            "{:-16} {:4} -> {}",
-            op_repr,
-            jump,
-            jump + sign * offset as usize + 1,
-        );
+    let jump_instruction = |op_repr: &str, jump: usize, offset: u16, fwd: bool| {
+        // +1 since the instruction pointer is increased right after we read an opcode
+        let jump_target = if fwd {
+            jump + 1 + offset as usize
+        } else {
+            jump + 1 - offset as usize
+        };
+        println!("{:-16} {:4} -> {}", op_repr, jump, jump_target);
     };
 
     match chunk.instructions[idx] {
         OpCode::Pop => println!("OP_POP"),
-        OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, 1),
-        OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, 1),
+        OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", idx, *offset, false),
+        OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, true),
+        OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, true),
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Print => println!("OP_PRINT"),
         OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),

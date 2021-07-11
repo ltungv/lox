@@ -23,6 +23,8 @@ pub enum RuntimeError {
 /// Error while parsing Lox tokens
 #[derive(Debug)]
 pub enum ParseError {
+    /// Loop body exceeds u16::MAX bytes
+    LoopTooLarge(Position, String),
     /// Range to jump over exceeds u16
     JumpTooLarge(Position, String),
     /// Can not use variable name in its initializer
@@ -98,6 +100,14 @@ impl fmt::Display for ParseError {
             }
         };
         match self {
+            Self::LoopTooLarge(p, lexeme) => {
+                write!(
+                    f,
+                    "{} Error at {}: Too much code to jump over.",
+                    p,
+                    at(lexeme)
+                )
+            }
             Self::JumpTooLarge(p, lexeme) => {
                 write!(
                     f,
