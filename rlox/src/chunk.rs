@@ -28,11 +28,15 @@ pub enum OpCode {
     Print,
     /// Return from the current function
     Return,
+    /// Set the value of a global variable
+    GetLocal(u8),
+    /// Set the value of a local variable
+    SetLocal(u8),
     /// Pop the top of the stack and define a variable initialized with that value.
     DefineGlobal(u8),
-    /// Get the value of the global variable
+    /// Get the value of a global variable
     GetGlobal(u8),
-    /// Set the value of the global variable
+    /// Set the value of a global variable
     SetGlobal(u8),
     /// Load a constant
     Constant(u8),
@@ -189,26 +193,30 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
         print!("{:4} ", chunk.positions[idx].line);
     }
 
-    let constant_instuction = |op_repr: &str, idx: u8| match chunk.read_const(idx) {
+    let constant_instruction = |op_repr: &str, const_id: u8| match chunk.read_const(const_id) {
         Value::String(id) => println!(
             "{:-16} {:4} {}",
             op_repr,
-            idx,
+            const_id,
             strings
                 .resolve(*id)
                 .expect("String must be allocated before access.")
         ),
-        val => println!("{:-16} {:4} {}", "OP_CONSTANT", idx, val.as_string(strings)),
+        val => println!("{:-16} {:4} {}", op_repr, const_id, val.as_string(strings)),
     };
+
+    let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);
 
     match chunk.instructions[idx] {
         OpCode::Pop => println!("OP_POP"),
         OpCode::Print => println!("OP_PRINT"),
         OpCode::Return => println!("OP_RETURN"),
-        OpCode::DefineGlobal(ref idx) => constant_instuction("OP_DEFINE_GLOBAL", *idx),
-        OpCode::GetGlobal(ref idx) => constant_instuction("OP_GET_GLOBAL", *idx),
-        OpCode::SetGlobal(ref idx) => constant_instuction("OP_SET_GLOBAL", *idx),
-        OpCode::Constant(ref idx) => constant_instuction("OP_CONSTANT", *idx),
+        OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
+        OpCode::SetLocal(ref slot) => byte_instruction("OP_SET_LOCAL", *slot),
+        OpCode::DefineGlobal(ref const_id) => constant_instruction("OP_DEFINE_GLOBAL", *const_id),
+        OpCode::GetGlobal(ref const_id) => constant_instruction("OP_GET_GLOBAL", *const_id),
+        OpCode::SetGlobal(ref const_id) => constant_instruction("OP_SET_GLOBAL", *const_id),
+        OpCode::Constant(ref const_id) => constant_instruction("OP_CONSTANT", *const_id),
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),

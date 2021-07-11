@@ -23,6 +23,12 @@ pub enum RuntimeError {
 /// Error while parsing Lox tokens
 #[derive(Debug)]
 pub enum ParseError {
+    /// Can not use variable name in its initializer
+    SelfReferencingInitializer(Position, String),
+    /// A named can only be declared as variable once in local scope
+    VariableRedeclaration(Position, String),
+    /// The number of local variables can not exceed the maximum stack size
+    TooManyLocalVariables(Position, String),
     /// Can not assign a value to the LHS
     InvalidAssignTarget(Position, String),
     /// Current token is not supposed to be there
@@ -82,22 +88,48 @@ impl fmt::Display for RuntimeError {
 impl std::error::Error for ParseError {}
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let at = |s: &str| {
+            if s.is_empty() {
+                "end".to_string()
+            } else {
+                format!("'{}'", s)
+            }
+        };
         match self {
+            Self::SelfReferencingInitializer(p, lexeme) => {
+                write!(
+                    f,
+                    "{} Error at {}: Can't read local variable in its own initializer.",
+                    p,
+                    at(lexeme)
+                )
+            }
+            Self::VariableRedeclaration(p, lexeme) => {
+                write!(
+                    f,
+                    "{} Error at {}: Already variable with this name in this scope.",
+                    p,
+                    at(lexeme)
+                )
+            }
+            Self::TooManyLocalVariables(p, lexeme) => {
+                write!(
+                    f,
+                    "{} Error at {}: Too many local variables in function.",
+                    p,
+                    at(lexeme),
+                )
+            }
             Self::InvalidAssignTarget(p, lexeme) => {
-                let at = if lexeme.is_empty() {
-                    "end".to_string()
-                } else {
-                    format!("'{}'", lexeme)
-                };
-                write!(f, "{} Error at {}: Invalid assignment target.", p, at)
+                write!(
+                    f,
+                    "{} Error at {}: Invalid assignment target.",
+                    p,
+                    at(lexeme)
+                )
             }
             Self::UnexpectedToken(ref pos, ref lexeme, ref msg) => {
-                let at = if lexeme.is_empty() {
-                    "end".to_string()
-                } else {
-                    format!("'{}'", lexeme)
-                };
-                write!(f, "{} Error at {}: {}.", pos, at, msg)
+                write!(f, "{} Error at {}: {}.", pos, at(lexeme), msg)
             }
             Self::UnexpectedEof => write!(f, "Error: Unexpected end of file."),
         }

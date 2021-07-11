@@ -17,6 +17,9 @@ A bytecode virtual machine written in Rust for the Lox programming language.
   ```
 + [ ] Reuse variable name constant each time a variable is referenced.
 + [ ] Find better data structure for storing global variables.
++ [ ] Allow more than 256 local variables.
++ [ ] Const declaration.
++ [ ] Better data structure/algorithm for resoving variable at compile time.
 + [ ] ~Memory efficient encoding for line information~.
 
 ## Addtional features

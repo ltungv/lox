@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-    compile, Chunk, Error, OpCode, Position, RuntimeError, StringId, StringInterner, Value,
+    compile, Chunk, Compiler, Error, OpCode, Position, RuntimeError, StringId, StringInterner,
+    Value,
 };
 
 #[cfg(debug_assertions)]
 use crate::{disassemble_chunk, disassemble_instruction};
 
 /// We're limiting the stack's size to be in specification with clox
-const MAX_STACK_SIZE: usize = 256;
+pub const MAX_STACK_SIZE: usize = 256;
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug)]
@@ -33,7 +34,9 @@ impl Default for VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let mut chunk = compile(src, &mut self.strings).ok_or(Error::Compile)?;
+        let mut compiler = Compiler::new(src, &mut self.strings);
+        compiler.compile();
+        let mut chunk = compiler.finish().ok_or(Error::Compile)?;
         chunk.write_instruction(OpCode::Return, Position::default());
 
         #[cfg(debug_assertions)]
@@ -67,8 +70,16 @@ impl VM {
                     // exit the interpreter
                     return Ok(());
                 }
-                OpCode::DefineGlobal(ref idx) => {
-                    let name = chunk.read_const(*idx);
+                OpCode::GetLocal(ref slot) => {
+                    let local = self.stack[*slot as usize].clone();
+                    self.push(local)?;
+                }
+                OpCode::SetLocal(ref slot) => {
+                    let val = self.peek(0)?;
+                    self.stack[*slot as usize] = val.clone();
+                }
+                OpCode::DefineGlobal(ref const_id) => {
+                    let name = chunk.read_const(*const_id);
                     if let Value::String(name) = name {
                         let val = self.peek(0)?.clone();
                         self.globals.insert(*name, val);
@@ -77,8 +88,8 @@ impl VM {
                         unreachable!("Constant for the variable name must have been added.");
                     }
                 }
-                OpCode::GetGlobal(ref idx) => {
-                    let name = chunk.read_const(*idx);
+                OpCode::GetGlobal(ref const_id) => {
+                    let name = chunk.read_const(*const_id);
                     if let Value::String(name) = name {
                         let val = self
                             .globals
@@ -97,8 +108,8 @@ impl VM {
                         unreachable!("Constant for the variable name must have been added.");
                     }
                 }
-                OpCode::SetGlobal(ref idx) => {
-                    let name = chunk.read_const(*idx);
+                OpCode::SetGlobal(ref const_id) => {
+                    let name = chunk.read_const(*const_id);
                     if let Value::String(name) = name {
                         let val = self.peek(0)?.clone();
                         if !self.globals.contains_key(name) {
@@ -110,13 +121,12 @@ impl VM {
                             return Err(RuntimeError::UndefinedVariable(*pos, name));
                         }
                         self.globals.insert(*name, val);
-                        self.pop()?;
                     } else {
                         unreachable!("Constant for the variable name must have been added.");
                     }
                 }
-                OpCode::Constant(ref idx) => {
-                    let val = chunk.read_const(*idx);
+                OpCode::Constant(ref const_id) => {
+                    let val = chunk.read_const(*const_id);
                     self.push(val.clone())?;
                 }
                 OpCode::Nil => self.push(Value::Nil)?,

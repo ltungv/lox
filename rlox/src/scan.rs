@@ -43,7 +43,6 @@ impl<'s> Scanner<'s> {
         self.lexeme_begin = self.lexeme_end;
         let c = match self.advance() {
             None => {
-                self.pos.next_column();
                 self.finished = true;
                 return Ok(Some(Token {
                     typ: token::Type::Eof,

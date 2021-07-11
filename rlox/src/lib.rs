@@ -6,6 +6,7 @@
 mod chunk;
 mod compile;
 mod error;
+mod intern;
 mod scan;
 mod token;
 mod vm;
@@ -13,6 +14,7 @@ mod vm;
 pub use chunk::*;
 pub use compile::*;
 pub use error::*;
+pub use intern::*;
 pub use scan::*;
 pub use token::*;
 pub use vm::*;

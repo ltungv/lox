@@ -2,21 +2,40 @@ use std::iter::Peekable;
 
 use crate::{
     scan, token, Chunk, OpCode, ParseError, Position, Scanner, StringInterner, Token, Value,
+    MAX_STACK_SIZE,
 };
 
-/// Compile the given source code in to bytecodes that can be read
-/// by the virtual machine
-pub fn compile(src: &str, strings: &mut StringInterner) -> Option<Chunk> {
-    let mut chunk = Chunk::default();
-    let mut parser = Parser::new(&mut chunk, strings, src);
-    parser.parse();
-    if parser.had_error {
-        return None;
-    }
-    Some(chunk)
-}
-
 /// Scan for tokens and emit corresponding bytecodes.
+///
+/// # The Lox Compiler
+///
+/// Lox uses lexical scoping so the compiler knows where it is within the stack while parsing the
+/// source code. We are simulating the virtual machine's stack so at runtime we can pre-allocate
+/// the needed space on to the stack, and access locals through array index for better preformance.
+///
+/// ## Locals Stack
+///
+/// ```
+/// {
+///     var a = 1;             // STACK: [ 1 ]
+///     {
+///         var b = 2;         // STACK: [ 1 ] [ 2 ]
+///         {
+///             var c = 3;     // STACK: [ 1 ] [ 2 ] [ 3 ]
+///             {
+///                 var d = 4; // STACK: [ 1 ] [ 2 ] [ 3 ] [ 4 ]
+///             }              // STACK: [ 1 ] [ 2 ] [ 3 ] [ x ]
+///
+///             var e = 5;     // STACK: [ 1 ] [ 2 ] [ 3 ] [ 5 ]
+///         }                  // STACK: [ 1 ] [ 2 ] [ x ] [ x ]
+///     }                      // STACK: [ 1 ] [ x ]
+///
+///     var f = 6;             // STACK: [ 1 ] [ 6 ]
+///     {
+///         var g = 7;         // STACK: [ 1 ] [ 6 ] [ 7 ]
+///     }                      // STACK: [ 1 ] [ 6 ] [ x ]
+/// }                          // STACK: [ x ] [ x ]
+/// ```
 ///
 /// # Grammars
 ///
@@ -62,22 +81,24 @@ pub fn compile(src: &str, strings: &mut StringInterner) -> Option<Chunk> {
 ///              | "this" | "super" "." IDENT
 ///              | "true" | "false" | "nil"
 ///              | "(" expr ")" ;
-/// ```
+///
 #[derive(Debug)]
-struct Parser<'a> {
-    chunk: &'a mut Chunk,
-    strings: &'a mut StringInterner,
+pub struct Compiler<'a> {
     tokens: Peekable<scan::Iter<'a>>,
     prev_token: Token<'a>,
     had_error: bool,
+
+    chunk: Chunk,
+    strings: &'a mut StringInterner,
+
+    locals: Vec<Local<'a>>,
+    scope_depth: usize,
 }
 
-impl<'a> Parser<'a> {
+impl<'a> Compiler<'a> {
     /// Create a new parser
-    fn new(chunk: &'a mut Chunk, strings: &'a mut StringInterner, src: &'a str) -> Self {
+    pub fn new(src: &'a str, strings: &'a mut StringInterner) -> Self {
         Self {
-            chunk,
-            strings,
             tokens: Scanner::new(src).into_iter().peekable(),
             prev_token: Token {
                 typ: token::Type::Eof,
@@ -85,10 +106,14 @@ impl<'a> Parser<'a> {
                 pos: Position::default(),
             },
             had_error: false,
+            chunk: Chunk::default(),
+            strings,
+            locals: Vec::with_capacity(MAX_STACK_SIZE),
+            scope_depth: 0,
         }
     }
 
-    fn parse(&mut self) {
+    pub fn compile(&mut self) {
         while let Some(tok) = self.peek() {
             if tok.typ == token::Type::Eof {
                 return;
@@ -102,6 +127,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn finish(self) -> Option<Chunk> {
+        if self.had_error {
+            return None;
+        }
+        Some(self.chunk)
+    }
+
     fn emit(&mut self, op: OpCode) {
         self.chunk.write_instruction(op, self.prev_token.pos);
     }
@@ -113,12 +145,45 @@ impl<'a> Parser<'a> {
         self.statement()
     }
 
+    fn declare_variable(&mut self) -> Result<(), ParseError> {
+        if self.scope_depth == 0 {
+            return Ok(());
+        }
+        if self.locals.len() == MAX_STACK_SIZE {
+            return Err(ParseError::TooManyLocalVariables(
+                self.prev_token.pos,
+                self.prev_token.lexeme.to_string(),
+            ));
+        }
+
+        let name = self.prev_token.clone();
+        for l in self.locals.iter() {
+            if l.initialized && l.depth < self.scope_depth {
+                break;
+            }
+            if l.name.lexeme == name.lexeme {
+                return Err(ParseError::VariableRedeclaration(
+                    self.prev_token.pos,
+                    self.prev_token.lexeme.to_string(),
+                ));
+            }
+        }
+
+        self.locals.push((name, self.scope_depth).into());
+        Ok(())
+    }
+
     fn var_declaration(&mut self) -> Result<(), ParseError> {
         // variable name
         self.consume(token::Type::Ident, "Expect variable name")?;
-        let ident_id = self.chunk.write_const(Value::String(
-            self.strings.get_or_intern(self.prev_token.lexeme),
-        ));
+        self.declare_variable()?;
+        let ident_id = if self.scope_depth > 0 {
+            0 // A dummy value used when we're not in the global scope
+        } else {
+            self.chunk.write_const(Value::String(
+                self.strings.get_or_intern(self.prev_token.lexeme),
+            ))
+        };
         // initializer
         if self.advance_if(token::Type::Equal)? {
             self.expression()?;
@@ -131,15 +196,55 @@ impl<'a> Parser<'a> {
             "Expect ';' after variable declaration",
         )?;
 
+        // Local variables are not looked up by name. There's no need to stuff
+        // the variable name into the constant table.
+        if self.scope_depth > 0 {
+            self.locals
+                .last_mut()
+                .expect("We just pushed a local.")
+                .initialized = true;
+            return Ok(());
+        }
         self.emit(OpCode::DefineGlobal(ident_id));
         Ok(())
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
+        if self.advance_if(token::Type::LBrace)? {
+            self.begin_scope();
+            self.block()?;
+            self.end_scope();
+            return Ok(());
+        }
         if self.advance_if(token::Type::Print)? {
             return self.print_statement();
         }
         self.expression_statement()
+    }
+
+    fn block(&mut self) -> Result<(), ParseError> {
+        while let Some(tok) = self.peek() {
+            if tok.typ == token::Type::RBrace || tok.typ == token::Type::Eof {
+                break;
+            }
+            self.declaration()?;
+        }
+        self.consume(token::Type::RBrace, "Expect '}' after blok.")
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+        while let Some(l) = self.locals.last() {
+            if l.depth <= self.scope_depth {
+                break;
+            }
+            self.emit(OpCode::Pop);
+            self.locals.pop();
+        }
     }
 
     fn print_statement(&mut self) -> Result<(), ParseError> {
@@ -197,16 +302,40 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn resolve_local(&self, name: &Token) -> Result<Option<u8>, ParseError> {
+        self.locals
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, l)| l.name.lexeme.eq(name.lexeme))
+            .map(|(i, l)| {
+                if l.initialized {
+                    Ok(i as u8)
+                } else {
+                    Err(ParseError::SelfReferencingInitializer(
+                        name.pos,
+                        name.lexeme.to_string(),
+                    ))
+                }
+            })
+            .transpose()
+    }
+
     fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
-        let ident_id = self.chunk.write_const(Value::String(
-            self.strings.get_or_intern(self.prev_token.lexeme),
-        ));
+        let (op_get, op_set) = if let Some(local) = self.resolve_local(&self.prev_token)? {
+            (OpCode::GetLocal(local), OpCode::SetLocal(local))
+        } else {
+            let ident_id = self.chunk.write_const(Value::String(
+                self.strings.get_or_intern(self.prev_token.lexeme),
+            ));
+            (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
+        };
 
         if can_assign && self.advance_if(token::Type::Equal)? {
             self.expression()?;
-            self.emit(OpCode::SetGlobal(ident_id));
+            self.emit(op_set);
         } else {
-            self.emit(OpCode::GetGlobal(ident_id));
+            self.emit(op_get);
         }
         Ok(())
     }
@@ -388,6 +517,24 @@ impl<'a> Parser<'a> {
                 msg.to_string(),
             )),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
+        }
+    }
+}
+
+/// Store name and depth of the resolved identifer.
+#[derive(Debug)]
+struct Local<'t> {
+    name: Token<'t>,
+    depth: usize,
+    initialized: bool,
+}
+
+impl<'t> From<(Token<'t>, usize)> for Local<'t> {
+    fn from((name, depth): (Token<'t>, usize)) -> Self {
+        Self {
+            name,
+            depth,
+            initialized: false,
         }
     }
 }
