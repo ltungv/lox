@@ -1,6 +1,6 @@
-use string_interner::{symbol::SymbolU32, DefaultBackend, DefaultHashBuilder};
+use std::fmt;
 
-use crate::Position;
+use crate::{intern, Position, StringId};
 
 /// OpCode is a number that specifies the type of the instruction.
 ///
@@ -66,13 +66,6 @@ pub enum OpCode {
     Divide,
 }
 
-/// Default string interner
-pub type StringInterner<B = DefaultBackend<StringId>, H = DefaultHashBuilder> =
-    string_interner::StringInterner<StringId, B, H>;
-
-/// Interned string id
-pub type StringId = SymbolU32;
-
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -92,6 +85,17 @@ pub enum Value {
     String(StringId),
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            Self::Nil => write!(f, "nil"),
+            Self::Bool(b) => write!(f, "{}", b),
+            Self::Number(n) => write!(f, "{}", n),
+            Value::String(id) => write!(f, "{}", intern::str(*id)),
+        }
+    }
+}
+
 impl Value {
     /// Return true if the value is `nil` or `false`. Otherwise, return false.
     pub fn is_falsey(&self) -> bool {
@@ -99,19 +103,6 @@ impl Value {
             Self::Bool(b) => !b,
             Self::Nil => true,
             _ => false,
-        }
-    }
-
-    /// Get the string representation as this value.
-    pub fn as_string(&self, strings: &StringInterner) -> String {
-        match self {
-            Self::Nil => "nil".to_string(),
-            Self::Bool(b) => format!("{}", b),
-            Self::Number(n) => format!("{}", n),
-            Value::String(id) => strings
-                .resolve(*id)
-                .expect("String must be allocated before access.")
-                .to_string(),
         }
     }
 
@@ -176,16 +167,16 @@ impl Chunk {
 
 /// Go through the instructions in the chunk and display them in human-readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_chunk(chunk: &Chunk, name: &str, strings: &StringInterner) {
+pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     println!("== {} ==", name);
     for i in 0..chunk.instructions.len() {
-        disassemble_instruction(chunk, i, strings);
+        disassemble_instruction(chunk, i);
     }
 }
 
 /// Display an instruction in human readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringInterner) {
+pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
     print!("{:04} ", idx);
     if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
         print!("   | ");
@@ -193,18 +184,14 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize, strings: &StringIntern
         print!("{:4} ", chunk.positions[idx].line);
     }
 
-    let constant_instruction = |op_repr: &str, const_id: u8| match chunk.read_const(const_id) {
-        Value::String(id) => println!(
+    let constant_instruction = |op_repr: &str, const_id: u8| {
+        println!(
             "{:-16} {:4} {}",
             op_repr,
             const_id,
-            strings
-                .resolve(*id)
-                .expect("String must be allocated before access.")
-        ),
-        val => println!("{:-16} {:4} {}", op_repr, const_id, val.as_string(strings)),
+            chunk.read_const(const_id)
+        );
     };
-
     let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);
 
     match chunk.instructions[idx] {

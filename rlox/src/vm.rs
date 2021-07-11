@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    compile, Chunk, Compiler, Error, OpCode, Position, RuntimeError, StringId, StringInterner,
-    Value,
-};
+use crate::{intern, Chunk, Compiler, Error, OpCode, Position, RuntimeError, StringId, Value};
 
 #[cfg(debug_assertions)]
 use crate::{disassemble_chunk, disassemble_instruction};
@@ -17,7 +14,6 @@ pub struct VM {
     ip: usize,
     stack: Vec<Value>,
     globals: HashMap<StringId, Value>,
-    strings: StringInterner,
 }
 
 impl Default for VM {
@@ -26,7 +22,6 @@ impl Default for VM {
             ip: 0,
             stack: Vec::with_capacity(MAX_STACK_SIZE),
             globals: HashMap::default(),
-            strings: StringInterner::default(),
         }
     }
 }
@@ -34,13 +29,13 @@ impl Default for VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let mut compiler = Compiler::new(src, &mut self.strings);
+        let mut compiler = Compiler::new(src);
         compiler.compile();
         let mut chunk = compiler.finish().ok_or(Error::Compile)?;
         chunk.write_instruction(OpCode::Return, Position::default());
 
         #[cfg(debug_assertions)]
-        disassemble_chunk(&chunk, "code", &self.strings);
+        disassemble_chunk(&chunk, "code");
 
         self.ip = 0;
         self.run(&chunk)?;
@@ -52,8 +47,8 @@ impl VM {
         loop {
             #[cfg(debug_assertions)]
             {
-                print_stack_trace(&self.stack, &self.strings);
-                disassemble_instruction(&chunk, self.ip, &self.strings);
+                print_stack_trace(&self.stack);
+                disassemble_instruction(&chunk, self.ip);
             }
 
             let (opcode, pos) = chunk.read_instruction(self.ip);
@@ -64,7 +59,7 @@ impl VM {
                 }
                 OpCode::Print => {
                     let v = self.pop()?;
-                    println!("{}", v.as_string(&self.strings));
+                    println!("{}", v);
                 }
                 OpCode::Return => {
                     // exit the interpreter
@@ -95,12 +90,7 @@ impl VM {
                             .globals
                             .get(name)
                             .ok_or_else(|| {
-                                let name = self
-                                    .strings
-                                    .resolve(*name)
-                                    .expect("String for variable name must have been allocated.")
-                                    .to_string();
-                                RuntimeError::UndefinedVariable(*pos, name)
+                                RuntimeError::UndefinedVariable(*pos, intern::str(*name))
                             })?
                             .clone();
                         self.push(val)?;
@@ -113,12 +103,7 @@ impl VM {
                     if let Value::String(name) = name {
                         let val = self.peek(0)?.clone();
                         if !self.globals.contains_key(name) {
-                            let name = self
-                                .strings
-                                .resolve(*name)
-                                .expect("String for variable name must have been allocated.")
-                                .to_string();
-                            return Err(RuntimeError::UndefinedVariable(*pos, name));
+                            return Err(RuntimeError::UndefinedVariable(*pos, intern::str(*name)));
                         }
                         self.globals.insert(*name, val);
                     } else {
@@ -170,20 +155,12 @@ impl VM {
                         *v1 = Value::Number(n1 + n2);
                     }
                     (&Value::String(s2), &Value::String(s1)) => {
-                        let mut res = String::new();
-                        res += self
-                            .strings
-                            .resolve(s1)
-                            .expect("String must be allocated before access.");
-                        res += self
-                            .strings
-                            .resolve(s2)
-                            .expect("String must be allocated before access.");
-                        let res_id = self.strings.get_or_intern(res);
-
+                        let mut res = intern::str(s1);
+                        res += intern::str(s2).as_str();
                         self.pop()?;
+
                         let v1 = self.peek_mut(0)?;
-                        *v1 = Value::String(res_id);
+                        *v1 = Value::String(intern::id(res));
                     }
                     _ => return Err(RuntimeError::InvalidAddOperands(*pos)),
                 },
@@ -240,11 +217,11 @@ impl VM {
 }
 
 #[cfg(debug_assertions)]
-fn print_stack_trace(stack: &[Value], strings: &StringInterner) {
+fn print_stack_trace(stack: &[Value]) {
     // print stack trace
     print!("          ");
     for val in stack {
-        print!("[ {} ]", val.as_string(strings));
+        print!("[ {} ]", val);
     }
     println!();
 }

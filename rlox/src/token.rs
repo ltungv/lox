@@ -1,9 +1,11 @@
 use std::fmt;
 
+use crate::StringId;
+
 /// Lox token. One difference of the implementation of glox is that we don't
 /// eagerly evaluate the value of a literal.
 #[derive(Debug, Clone)]
-pub struct Token<'l> {
+pub struct Token {
     /// Lox token type
     pub typ: Type,
     /// The string segment in source that represents this token.
@@ -13,7 +15,7 @@ pub struct Token<'l> {
     /// We are gonna copy the string segment that contains the lexem of
     /// our token, so we don't have to deal with rust's compile, this can be
     /// implemented more efficiently.
-    pub lexeme: &'l str,
+    pub lexeme: StringId,
     /// The position at which this token was found in source.
     pub pos: Position,
 }

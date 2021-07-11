@@ -1,8 +1,7 @@
 use std::iter::Peekable;
 
 use crate::{
-    scan, token, Chunk, OpCode, ParseError, Position, Scanner, StringInterner, Token, Value,
-    MAX_STACK_SIZE,
+    intern, scan, token, Chunk, OpCode, ParseError, Position, Scanner, Token, Value, MAX_STACK_SIZE,
 };
 
 /// Scan for tokens and emit corresponding bytecodes.
@@ -85,34 +84,32 @@ use crate::{
 #[derive(Debug)]
 pub struct Compiler<'a> {
     tokens: Peekable<scan::Iter<'a>>,
-    prev_token: Token<'a>,
+    prev_token: Token,
     had_error: bool,
 
     chunk: Chunk,
-    strings: &'a mut StringInterner,
-
-    locals: Vec<Local<'a>>,
+    locals: Vec<Local>,
     scope_depth: usize,
 }
 
 impl<'a> Compiler<'a> {
     /// Create a new parser
-    pub fn new(src: &'a str, strings: &'a mut StringInterner) -> Self {
+    pub fn new(src: &'a str) -> Self {
         Self {
             tokens: Scanner::new(src).into_iter().peekable(),
             prev_token: Token {
                 typ: token::Type::Eof,
-                lexeme: "",
+                lexeme: intern::id(""),
                 pos: Position::default(),
             },
             had_error: false,
             chunk: Chunk::default(),
-            strings,
             locals: Vec::with_capacity(MAX_STACK_SIZE),
             scope_depth: 0,
         }
     }
 
+    /// Starts building the bytecode chunk
     pub fn compile(&mut self) {
         while let Some(tok) = self.peek() {
             if tok.typ == token::Type::Eof {
@@ -127,6 +124,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Return the compiled bytecode chunk if the process finishes without error
     pub fn finish(self) -> Option<Chunk> {
         if self.had_error {
             return None;
@@ -152,7 +150,7 @@ impl<'a> Compiler<'a> {
         if self.locals.len() == MAX_STACK_SIZE {
             return Err(ParseError::TooManyLocalVariables(
                 self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+                intern::str(self.prev_token.lexeme),
             ));
         }
 
@@ -164,7 +162,7 @@ impl<'a> Compiler<'a> {
             if l.name.lexeme == name.lexeme {
                 return Err(ParseError::VariableRedeclaration(
                     self.prev_token.pos,
-                    self.prev_token.lexeme.to_string(),
+                    intern::str(self.prev_token.lexeme),
                 ));
             }
         }
@@ -180,9 +178,8 @@ impl<'a> Compiler<'a> {
         let ident_id = if self.scope_depth > 0 {
             0 // A dummy value used when we're not in the global scope
         } else {
-            self.chunk.write_const(Value::String(
-                self.strings.get_or_intern(self.prev_token.lexeme),
-            ))
+            self.chunk
+                .write_const(Value::String(self.prev_token.lexeme))
         };
         // initializer
         if self.advance_if(token::Type::Equal)? {
@@ -307,14 +304,14 @@ impl<'a> Compiler<'a> {
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, l)| l.name.lexeme.eq(name.lexeme))
+            .find(|(_, l)| l.name.lexeme == name.lexeme)
             .map(|(i, l)| {
                 if l.initialized {
                     Ok(i as u8)
                 } else {
                     Err(ParseError::SelfReferencingInitializer(
                         name.pos,
-                        name.lexeme.to_string(),
+                        intern::str(name.lexeme),
                     ))
                 }
             })
@@ -325,9 +322,9 @@ impl<'a> Compiler<'a> {
         let (op_get, op_set) = if let Some(local) = self.resolve_local(&self.prev_token)? {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
         } else {
-            let ident_id = self.chunk.write_const(Value::String(
-                self.strings.get_or_intern(self.prev_token.lexeme),
-            ));
+            let ident_id = self
+                .chunk
+                .write_const(Value::String(self.prev_token.lexeme));
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
         };
 
@@ -341,17 +338,14 @@ impl<'a> Compiler<'a> {
     }
 
     fn string(&mut self) {
-        let value = self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1].to_string();
         let constant = self
             .chunk
-            .write_const(Value::String(self.strings.get_or_intern(value)));
+            .write_const(Value::String(self.prev_token.lexeme));
         self.emit(OpCode::Constant(constant));
     }
 
     fn number(&mut self) {
-        let value = self
-            .prev_token
-            .lexeme
+        let value = intern::str(self.prev_token.lexeme)
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
         let constant = self.chunk.write_const(Value::Number(value));
@@ -391,7 +385,7 @@ impl<'a> Compiler<'a> {
         if can_assign && self.advance_if(token::Type::Equal)? {
             return Err(ParseError::InvalidAssignTarget(
                 self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+                intern::str(self.prev_token.lexeme),
             ));
         }
         Ok(())
@@ -408,7 +402,7 @@ impl<'a> Compiler<'a> {
             _ => {
                 return Err(ParseError::UnexpectedToken(
                     self.prev_token.pos,
-                    self.prev_token.lexeme.to_string(),
+                    intern::str(self.prev_token.lexeme),
                     "Expect expression".to_string(),
                 ))
             }
@@ -430,7 +424,7 @@ impl<'a> Compiler<'a> {
             | token::Type::LessEqual => self.binary(),
             _ => Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+                intern::str(self.prev_token.lexeme),
                 "Expect expression".to_string(),
             )),
         }
@@ -506,14 +500,14 @@ impl<'a> Compiler<'a> {
                 } else {
                     Err(ParseError::UnexpectedToken(
                         tok.pos,
-                        tok.lexeme.to_string(),
+                        intern::str(tok.lexeme),
                         msg.to_string(),
                     ))
                 }
             }
             None => Err(ParseError::UnexpectedToken(
                 self.prev_token.pos,
-                self.prev_token.lexeme.to_string(),
+                intern::str(self.prev_token.lexeme),
                 msg.to_string(),
             )),
             Some(Err(_)) => unreachable!("Invalid tokens should already be skipped."),
@@ -523,14 +517,14 @@ impl<'a> Compiler<'a> {
 
 /// Store name and depth of the resolved identifer.
 #[derive(Debug)]
-struct Local<'t> {
-    name: Token<'t>,
+struct Local {
+    name: Token,
     depth: usize,
     initialized: bool,
 }
 
-impl<'t> From<(Token<'t>, usize)> for Local<'t> {
-    fn from((name, depth): (Token<'t>, usize)) -> Self {
+impl<'t> From<(Token, usize)> for Local {
+    fn from((name, depth): (Token, usize)) -> Self {
         Self {
             name,
             depth,
