@@ -29,6 +29,8 @@ pub enum OpCode {
     Jump(u16),
     /// Jump forward for n instructions if current stack top is falsey
     JumpIfFalse(u16),
+    /// Make a function call
+    Call(u8),
     /// Return from the current function
     Return,
     /// Print an expression in human readable format
@@ -139,7 +141,7 @@ pub struct Function {
     /// The name of the function
     pub name: StringId,
     /// Number of parameters the function has
-    pub arity: usize,
+    pub arity: u8,
     /// The bytecode chunk of this function
     pub chunk: Chunk,
 }
@@ -195,8 +197,8 @@ impl Chunk {
     }
 
     /// Read the instruction at the index.
-    pub fn read_instruction(&self, idx: usize) -> (&OpCode, &Position) {
-        (&self.instructions[idx], &self.positions[idx])
+    pub fn read_instruction(&self, idx: usize) -> (OpCode, Position) {
+        (self.instructions[idx], self.positions[idx])
     }
 
     /// Return the index of the last written instruction.
@@ -221,8 +223,8 @@ impl Chunk {
     }
 
     /// Read the constant at the given index
-    pub fn read_const(&self, idx: u8) -> &Value {
-        &self.constants[idx as usize]
+    pub fn read_const(&self, idx: u8) -> Value {
+        self.constants[idx as usize].clone()
     }
 }
 
@@ -269,6 +271,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", idx, *offset, false),
         OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, true),
         OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, true),
+        OpCode::Call(_) => println!("OP_CALL"),
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Print => println!("OP_PRINT"),
         OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
