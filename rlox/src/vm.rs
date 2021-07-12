@@ -15,7 +15,7 @@ pub const MAX_STACK: usize = u8::MAX as usize * MAX_FRAMES;
 
 #[derive(Debug)]
 struct CallFrame {
-    function: Rc<ObjFun>,
+    fun: Rc<ObjFun>,
     ip: usize,
     slot: usize,
 }
@@ -47,9 +47,9 @@ impl VM {
         let mut compiler = Compiler::new(src);
         compiler.compile();
 
-        let function = Rc::new(compiler.finish().ok_or(Error::Compile)?);
-        self.stack.push(Value::Fun(Rc::clone(&function)));
-        self.call(function, 0)?;
+        let fun = Rc::new(compiler.finish().ok_or(Error::Compile)?);
+        self.stack.push(Value::Fun(Rc::clone(&fun)));
+        self.call(fun, 0)?;
         self.run()?;
         Ok(())
     }
@@ -57,8 +57,8 @@ impl VM {
     /// Print out where execution stop right before the error
     pub fn print_stack_trace(&self) {
         for frame in self.frames.iter().rev() {
-            let (_, pos) = frame.function.chunk.read_instruction(frame.ip - 1);
-            let fname = intern::str(frame.function.name);
+            let (_, pos) = frame.fun.chunk.read_instruction(frame.ip - 1);
+            let fname = intern::str(frame.fun.name);
             if fname.is_empty() {
                 eprintln!("{} in script.", pos);
             } else {
@@ -288,11 +288,11 @@ impl VM {
         }
     }
 
-    fn call(&mut self, function: Rc<ObjFun>, argc: u8) -> Result<(), RuntimeError> {
-        if argc != function.arity {
+    fn call(&mut self, fun: Rc<ObjFun>, argc: u8) -> Result<(), RuntimeError> {
+        if argc != fun.arity {
             return Err(RuntimeError::InvalidCall(format!(
                 "Expected {} arguments but got {}",
-                function.arity, argc
+                fun.arity, argc
             )));
         }
 
@@ -301,7 +301,7 @@ impl VM {
         }
 
         let frame = CallFrame {
-            function,
+            fun,
             ip: 0,
             slot: self.stack.len() - argc as usize - 1,
         };
@@ -325,13 +325,13 @@ impl VM {
 
     fn next_instruction(&mut self) -> OpCode {
         let frame = self.frame_mut();
-        let (opcode, _) = frame.function.chunk.read_instruction(frame.ip);
+        let (opcode, _) = frame.fun.chunk.read_instruction(frame.ip);
         frame.ip += 1;
         opcode
     }
 
     fn chunk(&self) -> &Chunk {
-        &self.frame().function.chunk
+        &self.frame().fun.chunk
     }
 
     fn frame(&self) -> &CallFrame {

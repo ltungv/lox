@@ -22,7 +22,7 @@ pub const MAX_CHUNK_CONSTANTS: usize = 256;
 /// This is used to so that the compiler knows what kind of chunk it's current compilling.
 /// We are treating the entire script as a implicit function.
 #[derive(Debug, PartialEq, Eq)]
-pub enum FunctionType {
+pub enum FunType {
     /// The compiled chunk is of a function
     Function,
     /// The compiled chunk is of the input script
@@ -133,7 +133,7 @@ impl<'a> Compiler<'a> {
                 pos: Position::default(),
             },
             had_error: false,
-            nestings: vec![Nesting::new(ObjFun::default(), FunctionType::Script)],
+            nestings: vec![Nesting::new(ObjFun::default(), FunType::Script)],
         }
     }
 
@@ -157,15 +157,15 @@ impl<'a> Compiler<'a> {
             self.emit_return();
             #[cfg(debug_assertions)]
             disassemble_chunk(
-                &self.nest().function.chunk,
-                format!("{}", self.nest().function).as_str(),
+                &self.nest().fun.chunk,
+                format!("{}", self.nest().fun).as_str(),
             );
-            self.nestings.pop().map(|n| n.function)
+            self.nestings.pop().map(|n| n.fun)
         }
     }
 
     fn chunk(&mut self) -> &mut Chunk {
-        &mut self.nest_mut().function.chunk
+        &mut self.nest_mut().fun.chunk
     }
 
     fn nest(&self) -> &Nesting {
@@ -245,12 +245,12 @@ impl<'a> Compiler<'a> {
     fn fun_declaration(&mut self) -> Result<(), ParseError> {
         let ident_id = self.parse_variable()?;
         self.mark_initialized();
-        self.function(FunctionType::Function)?;
+        self.function(FunType::Function)?;
         self.define_variable(ident_id);
         Ok(())
     }
 
-    fn function(&mut self, function_type: FunctionType) -> Result<(), ParseError> {
+    fn function(&mut self, fun_t: FunType) -> Result<(), ParseError> {
         let name = intern::id(self.previous_token.lexeme);
         self.nestings.push(Nesting::new(
             ObjFun {
@@ -258,14 +258,14 @@ impl<'a> Compiler<'a> {
                 arity: 0,
                 chunk: Chunk::default(),
             },
-            function_type,
+            fun_t,
         ));
         self.begin_scope();
 
         self.consume(token::Type::LParen, "Expect '(' after function name")?;
         if self.current_token.typ != token::Type::RParen {
             loop {
-                if self.nest_mut().function.arity as usize == MAX_PARAMS {
+                if self.nest_mut().fun.arity as usize == MAX_PARAMS {
                     return Err(ParseError::LimitReached(
                         self.current_token.pos,
                         self.current_token.lexeme.to_string(),
@@ -273,7 +273,7 @@ impl<'a> Compiler<'a> {
                     ));
                 }
 
-                self.nest_mut().function.arity += 1;
+                self.nest_mut().fun.arity += 1;
                 let ident_id = self.parse_variable()?;
                 self.define_variable(ident_id);
 
@@ -286,8 +286,8 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::LBrace, "Expect '{' before function body")?;
         self.block()?;
 
-        let function = Rc::new(self.finish().expect("No errors have happened"));
-        let const_id = self.make_const(Value::Fun(function))?;
+        let fun = Rc::new(self.finish().expect("No errors have happened"));
+        let const_id = self.make_const(Value::Fun(fun))?;
         self.emit(OpCode::Constant(const_id));
         Ok(())
     }
@@ -421,7 +421,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn return_statement(&mut self) -> Result<(), ParseError> {
-        if self.nest().function_type == FunctionType::Script {
+        if self.nest().fun_t == FunType::Script {
             return Err(ParseError::UnexpectedToken(
                 self.previous_token.pos,
                 self.previous_token.lexeme.to_string(),
@@ -848,14 +848,14 @@ impl<'a> Compiler<'a> {
 
 #[derive(Debug)]
 struct Nesting {
-    function: ObjFun,
-    function_type: FunctionType,
+    fun: ObjFun,
+    fun_t: FunType,
     locals: Vec<Local>,
     scope_depth: usize,
 }
 
 impl Nesting {
-    fn new(function: ObjFun, function_type: FunctionType) -> Self {
+    fn new(fun: ObjFun, fun_t: FunType) -> Self {
         // The first slot on the stack is reserved for the callframe
         let mut locals = Vec::with_capacity(MAX_STACK);
         locals.push(Local {
@@ -864,8 +864,8 @@ impl Nesting {
             initialized: false,
         });
         Self {
-            function,
-            function_type,
+            fun,
+            fun_t,
             locals,
             scope_depth: 0,
         }
