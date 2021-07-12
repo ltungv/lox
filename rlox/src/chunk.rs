@@ -91,9 +91,9 @@ pub enum Value {
     /// or some non-freeable location.
     String(StringId),
     /// A function object
-    Function(Rc<Function>),
+    Fun(Rc<ObjFun>),
     /// A native function object
-    Native(Native),
+    NativeFun(ObjNativeFun),
 }
 
 impl fmt::Display for Value {
@@ -109,8 +109,8 @@ impl fmt::Display for Value {
                 }
             }
             Self::String(id) => write!(f, "{}", intern::str(*id)),
-            Self::Function(obj) => write!(f, "{}", obj),
-            Self::Native(n) => write!(f, "{}", n),
+            Self::Fun(obj) => write!(f, "{}", obj),
+            Self::NativeFun(n) => write!(f, "{}", n),
         }
     }
 }
@@ -140,7 +140,7 @@ impl Value {
 
 /// A function object that holds the bytecode of the function along with other metadata
 #[derive(Debug)]
-pub struct Function {
+pub struct ObjFun {
     /// The name of the function
     pub name: StringId,
     /// Number of parameters the function has
@@ -149,7 +149,7 @@ pub struct Function {
     pub chunk: Chunk,
 }
 
-impl fmt::Display for Function {
+impl fmt::Display for ObjFun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         let name_str = intern::str(self.name);
         if name_str.is_empty() {
@@ -160,7 +160,7 @@ impl fmt::Display for Function {
     }
 }
 
-impl Default for Function {
+impl Default for ObjFun {
     fn default() -> Self {
         Self {
             name: intern::id(""),
@@ -172,15 +172,15 @@ impl Default for Function {
 
 /// A native function
 #[derive(Clone)]
-pub struct Native(pub fn(&[Value]) -> Value);
+pub struct ObjNativeFun(pub fn(&[Value]) -> Value);
 
-impl fmt::Display for Native {
+impl fmt::Display for ObjNativeFun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(f, "<native fn>")
     }
 }
 
-impl fmt::Debug for Native {
+impl fmt::Debug for ObjNativeFun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(f, "<native fn>")
     }

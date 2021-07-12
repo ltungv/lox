@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, Function, Native, OpCode, RuntimeError, StringId, Value,
+    intern, Chunk, Compiler, Error, ObjFun, ObjNativeFun, OpCode, RuntimeError, StringId, Value,
 };
 
 #[cfg(debug_assertions)]
@@ -15,7 +15,7 @@ pub const MAX_STACK: usize = u8::MAX as usize * MAX_FRAMES;
 
 #[derive(Debug)]
 struct CallFrame {
-    function: Rc<Function>,
+    function: Rc<ObjFun>,
     ip: usize,
     slot: usize,
 }
@@ -48,7 +48,7 @@ impl VM {
         compiler.compile();
 
         let function = Rc::new(compiler.finish().ok_or(Error::Compile)?);
-        self.stack.push(Value::Function(Rc::clone(&function)));
+        self.stack.push(Value::Fun(Rc::clone(&function)));
         self.call(function, 0)?;
         self.run()?;
         Ok(())
@@ -270,8 +270,8 @@ impl VM {
 
     fn call_value(&mut self, callee: Value, argc: u8) -> Result<(), RuntimeError> {
         match callee {
-            Value::Function(f) => self.call(f, argc),
-            Value::Native(Native(f)) => {
+            Value::Fun(f) => self.call(f, argc),
+            Value::NativeFun(ObjNativeFun(f)) => {
                 let args = &self.stack[self.stack.len() - argc as usize..];
                 let res = f(args);
                 for _ in 1..argc {
@@ -285,7 +285,7 @@ impl VM {
         }
     }
 
-    fn call(&mut self, function: Rc<Function>, argc: u8) -> Result<(), RuntimeError> {
+    fn call(&mut self, function: Rc<ObjFun>, argc: u8) -> Result<(), RuntimeError> {
         if argc != function.arity {
             return Err(RuntimeError::InvalidCall(format!(
                 "Expected {} arguments but got {}",
@@ -313,7 +313,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = intern::id(name);
         self.push(Value::String(name))?;
-        self.push(Value::Native(Native(native)))?;
+        self.push(Value::NativeFun(ObjNativeFun(native)))?;
         self.globals.insert(name, self.stack[1].clone());
         self.pop();
         self.pop();

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    intern, token, Chunk, Function, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
+    intern, token, Chunk, ObjFun, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
     MAX_STACK,
 };
 
@@ -133,7 +133,7 @@ impl<'a> Compiler<'a> {
                 pos: Position::default(),
             },
             had_error: false,
-            nestings: vec![Nesting::new(Function::default(), FunctionType::Script)],
+            nestings: vec![Nesting::new(ObjFun::default(), FunctionType::Script)],
         }
     }
 
@@ -150,7 +150,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// Return the compiled bytecode chunk if the process finishes without error
-    pub fn finish(&mut self) -> Option<Function> {
+    pub fn finish(&mut self) -> Option<ObjFun> {
         if self.had_error {
             None
         } else {
@@ -253,7 +253,7 @@ impl<'a> Compiler<'a> {
     fn function(&mut self, function_type: FunctionType) -> Result<(), ParseError> {
         let name = intern::id(self.previous_token.lexeme);
         self.nestings.push(Nesting::new(
-            Function {
+            ObjFun {
                 name,
                 arity: 0,
                 chunk: Chunk::default(),
@@ -287,7 +287,7 @@ impl<'a> Compiler<'a> {
         self.block()?;
 
         let function = Rc::new(self.finish().expect("No errors have happened"));
-        let const_id = self.make_const(Value::Function(function))?;
+        let const_id = self.make_const(Value::Fun(function))?;
         self.emit(OpCode::Constant(const_id));
         Ok(())
     }
@@ -848,14 +848,14 @@ impl<'a> Compiler<'a> {
 
 #[derive(Debug)]
 struct Nesting {
-    function: Function,
+    function: ObjFun,
     function_type: FunctionType,
     locals: Vec<Local>,
     scope_depth: usize,
 }
 
 impl Nesting {
-    fn new(function: Function, function_type: FunctionType) -> Self {
+    fn new(function: ObjFun, function_type: FunctionType) -> Self {
         // The first slot on the stack is reserved for the callframe
         let mut locals = Vec::with_capacity(MAX_STACK);
         locals.push(Local {
