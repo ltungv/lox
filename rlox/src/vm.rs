@@ -67,6 +67,12 @@ impl VM {
         }
     }
 
+    /// Clear current stack and frames
+    pub fn reset_stack(&mut self) {
+        self.stack.clear();
+        self.frames.clear();
+    }
+
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
@@ -310,7 +316,9 @@ impl VM {
         let args = &self.stack[self.stack.len() - argc..];
         let call = fun.call;
         let res = call(args);
-        self.discard_top(argc - 1);
+        for _ in 0..argc {
+            self.pop();
+        }
         self.push(res)
     }
 
@@ -321,10 +329,7 @@ impl VM {
         call: fn(&[Value]) -> Value,
     ) -> Result<(), RuntimeError> {
         self.push(Value::String(intern::id(name)))?;
-        self.push(Value::NativeFun(ObjNativeFun {
-            arity,
-            call,
-        }))?;
+        self.push(Value::NativeFun(ObjNativeFun { arity, call }))?;
         if let Value::String(name) = self.stack[0] {
             self.globals.insert(name, self.stack[1].clone());
         }
@@ -373,10 +378,6 @@ impl VM {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Invalid bytecodes")
-    }
-
-    fn discard_top(&mut self, n: usize) {
-        self.stack.drain(..self.stack.len() - n);
     }
 }
 

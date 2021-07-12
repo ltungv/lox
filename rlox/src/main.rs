@@ -42,6 +42,7 @@ fn run_repl() {
                 if let Err(Error::Runtime(err)) = vm.interpret(&line) {
                     eprintln!("{}", err);
                     vm.print_stack_trace();
+                    vm.reset_stack();
                 }
             }
         }
@@ -63,6 +64,7 @@ fn run_file(path: &str) {
         Err(Error::Runtime(err)) => {
             eprintln!("{}", err);
             vm.print_stack_trace();
+            vm.reset_stack();
             process::exit(70);
         }
         Err(Error::Compile) => {
