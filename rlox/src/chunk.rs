@@ -236,14 +236,14 @@ impl Chunk {
     }
 
     /// Add a constant value to the chunk and return it position in the Vec
-    pub fn write_const(&mut self, val: Value) -> u8 {
+    pub fn write_const(&mut self, val: Value) -> usize {
         self.constants.push(val);
-        (self.constants.len() - 1) as u8
+        self.constants.len() - 1 
     }
 
     /// Read the constant at the given index
-    pub fn read_const(&self, idx: u8) -> Value {
-        self.constants[idx as usize].clone()
+    pub fn read_const(&self, idx: usize) -> &Value {
+        &self.constants[idx]
     }
 
     /// Get the number of constants stored in the chunk
@@ -276,7 +276,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
             "{:-16} {:4} {}",
             op_repr,
             const_id,
-            chunk.read_const(const_id)
+            chunk.read_const(const_id as usize)
         );
     };
     let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);

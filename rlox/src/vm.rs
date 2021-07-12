@@ -124,22 +124,23 @@ impl VM {
                     self.stack[offset] = val.clone();
                 }
                 OpCode::DefineGlobal(ref const_id) => {
-                    let name = self.chunk().read_const(*const_id);
-                    if let Value::String(name) = name {
-                        let val = self.peek(0).clone();
-                        self.globals.insert(name, val);
-                        self.pop();
-                    } else {
-                        unreachable!("Constant for the variable name must have been added.");
-                    }
+                    let name =
+                        if let Value::String(name) = self.chunk().read_const(*const_id as usize) {
+                            *name
+                        } else {
+                            unreachable!("Constant for the variable name must have been added.");
+                        };
+                    let val = self.peek(0).clone();
+                    self.globals.insert(name, val);
+                    self.pop();
                 }
                 OpCode::GetGlobal(ref const_id) => {
-                    let name = self.chunk().read_const(*const_id);
+                    let name = self.chunk().read_const(*const_id as usize);
                     if let Value::String(name) = name {
                         let val = self
                             .globals
                             .get(&name)
-                            .ok_or_else(|| RuntimeError::UndefinedVariable(intern::str(name)))?
+                            .ok_or_else(|| RuntimeError::UndefinedVariable(intern::str(*name)))?
                             .clone();
                         self.push(val)?;
                     } else {
@@ -147,19 +148,21 @@ impl VM {
                     }
                 }
                 OpCode::SetGlobal(ref const_id) => {
-                    let name = self.chunk().read_const(*const_id);
-                    if let Value::String(name) = name {
-                        let val = self.peek(0).clone();
-                        if !self.globals.contains_key(&name) {
-                            return Err(RuntimeError::UndefinedVariable(intern::str(name)));
-                        }
-                        self.globals.insert(name, val);
-                    } else {
-                        unreachable!("Constant for the variable name must have been added.");
+                    let name =
+                        if let Value::String(name) = self.chunk().read_const(*const_id as usize) {
+                            *name
+                        } else {
+                            unreachable!("Constant for the variable name must have been added.");
+                        };
+
+                    let val = self.peek(0).clone();
+                    if !self.globals.contains_key(&name) {
+                        return Err(RuntimeError::UndefinedVariable(intern::str(name)));
                     }
+                    self.globals.insert(name, val);
                 }
                 OpCode::Constant(ref const_id) => {
-                    let val = self.chunk().read_const(*const_id);
+                    let val = self.chunk().read_const(*const_id as usize).clone();
                     self.push(val)?;
                 }
                 OpCode::Nil => self.push(Value::Nil)?,

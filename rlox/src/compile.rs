@@ -187,7 +187,7 @@ impl<'a> Compiler<'a> {
             ));
         }
         let const_id = self.chunk().write_const(v);
-        Ok(const_id)
+        Ok(const_id as u8)
     }
 
     fn emit(&mut self, op: OpCode) {
