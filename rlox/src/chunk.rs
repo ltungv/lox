@@ -155,6 +155,16 @@ impl fmt::Display for Function {
     }
 }
 
+impl Default for Function {
+    fn default() -> Self {
+        Self {
+            name: intern::id(""),
+            arity: 0,
+            chunk: Chunk::default(),
+        }
+    }
+}
+
 /// A chunk holds a sequence of instructions to be executes and their data
 ///
 /// ```

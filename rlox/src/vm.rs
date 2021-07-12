@@ -41,7 +41,7 @@ impl Default for VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let mut compiler = Compiler::new(src, FunctionType::Script);
+        let mut compiler = Compiler::new(src);
         compiler.compile();
 
         let function = Rc::new(compiler.finish().ok_or(Error::Compile)?);
