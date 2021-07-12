@@ -1,8 +1,6 @@
 use std::{borrow::Borrow, collections::HashMap, rc::Rc};
 
-use crate::{
-    intern, Compiler, Error, Function, FunctionType, OpCode, RuntimeError, StringId, Value,
-};
+use crate::{intern, Compiler, Error, Function, OpCode, RuntimeError, StringId, Value};
 
 #[cfg(debug_assertions)]
 use crate::disassemble_instruction;
@@ -60,7 +58,11 @@ impl VM {
     /// Run the virtual machine with it currently given chunk.
     fn run(&mut self) -> Result<(), RuntimeError> {
         let (function, frame_slot) = {
-            let frame = self.frames.last().unwrap().borrow();
+            let frame = self
+                .frames
+                .last()
+                .expect("There's always one callframe for the script.")
+                .borrow();
             (Rc::clone(&frame.function), frame.slot)
         };
         loop {

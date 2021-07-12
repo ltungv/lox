@@ -139,7 +139,7 @@ pub struct Function {
     /// The name of the function
     pub name: StringId,
     /// Number of parameters the function has
-    pub arity: u8,
+    pub arity: usize,
     /// The bytecode chunk of this function
     pub chunk: Chunk,
 }

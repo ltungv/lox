@@ -1,7 +1,15 @@
+use std::rc::Rc;
+
 use crate::{
-    disassemble_chunk, intern, token, Function, OpCode, ParseError, Position, Scanner, StringId,
-    Token, Value, MAX_STACK,
+    intern, token, Chunk, Function, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
+    MAX_STACK,
 };
+
+#[cfg(debug_assertions)]
+use crate::disassemble_chunk;
+
+/// Maximum number of parameters a function can take
+pub const MAX_PARAMS: usize = 255;
 
 /// Function object's type.
 ///
@@ -143,28 +151,24 @@ impl<'a> Compiler<'a> {
             self.emit(OpCode::Return);
             #[cfg(debug_assertions)]
             disassemble_chunk(
-                &self.function().chunk,
-                format!("{}", self.function()).as_str(),
+                &self.nest().function.chunk,
+                format!("{}", self.nest().function).as_str(),
             );
             self.nestings.pop().map(|n| n.function)
         }
     }
 
-    fn function(&self) -> &Function {
-        &self.nesting().function
+    fn chunk(&mut self) -> &mut Chunk {
+        &mut self.nest_mut().function.chunk
     }
 
-    fn function_mut(&mut self) -> &mut Function {
-        &mut self.nesting_mut().function
-    }
-
-    fn nesting(&self) -> &Nesting {
+    fn nest(&self) -> &Nesting {
         self.nestings
             .last()
             .expect("There's always a nesting item.")
     }
 
-    fn nesting_mut(&mut self) -> &mut Nesting {
+    fn nest_mut(&mut self) -> &mut Nesting {
         self.nestings
             .last_mut()
             .expect("There's always a nesting item.")
@@ -172,16 +176,16 @@ impl<'a> Compiler<'a> {
 
     fn emit(&mut self, op: OpCode) {
         let pos = self.previous_token.pos;
-        self.function_mut().chunk.write_instruction(op, pos);
+        self.chunk().write_instruction(op, pos);
     }
 
     fn emit_jump<O: Fn(u16) -> OpCode>(&mut self, op: O) -> usize {
         self.emit(op(0xFFFF));
-        self.function_mut().chunk.instructions_count()
+        self.chunk().instructions_count()
     }
 
     fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
-        let offset = self.function_mut().chunk.instructions_count() - jump;
+        let offset = self.chunk().instructions_count() - jump;
         if offset > u16::MAX as usize {
             return Err(ParseError::JumpTooLarge(
                 self.current_token.pos,
@@ -189,15 +193,13 @@ impl<'a> Compiler<'a> {
                 "Too much code to jump over",
             ));
         }
-        self.function_mut()
-            .chunk
-            .patch_jump_instruction(jump - 1, offset as u16);
+        self.chunk().patch_jump_instruction(jump - 1, offset as u16);
         Ok(())
     }
 
     fn emit_loop(&mut self, loop_start: usize) -> Result<(), ParseError> {
         // +1 because the offset also takes into account the newly emitted loop opcode
-        let offset = self.function_mut().chunk.instructions_count() - loop_start + 1;
+        let offset = self.chunk().instructions_count() - loop_start + 1;
         if offset > u16::MAX as usize {
             return Err(ParseError::JumpTooLarge(
                 self.previous_token.pos,
@@ -210,10 +212,62 @@ impl<'a> Compiler<'a> {
     }
 
     fn declaration(&mut self) -> Result<(), ParseError> {
-        if self.advance_if(token::Type::Var) {
-            return self.var_declaration();
+        if self.advance_if(token::Type::Fun) {
+            self.fun_declaration()
+        } else if self.advance_if(token::Type::Var) {
+            self.var_declaration()
+        } else {
+            self.statement()
         }
-        self.statement()
+    }
+
+    fn fun_declaration(&mut self) -> Result<(), ParseError> {
+        let ident_id = self.parse_variable()?;
+        self.mark_initialized();
+        self.function(FunctionType::Function)?;
+        self.define_variable(ident_id);
+        Ok(())
+    }
+
+    fn function(&mut self, function_type: FunctionType) -> Result<(), ParseError> {
+        let name = intern::id(self.previous_token.lexeme);
+        self.nestings.push(Nesting::new(
+            Function {
+                name,
+                arity: 0,
+                chunk: Chunk::default(),
+            },
+            function_type,
+        ));
+        self.begin_scope();
+
+        self.consume(token::Type::LParen, "Expect '(' after function name.")?;
+        if self.current_token.typ != token::Type::RParen {
+            loop {
+                self.nest_mut().function.arity += 1;
+                if self.nest().function.arity as usize > MAX_PARAMS {
+                    return Err(ParseError::InvalidDeclaration(
+                        self.current_token.pos,
+                        self.current_token.lexeme.to_string(),
+                        "Can't have more than 255 parameters",
+                    ));
+                }
+                let ident_id = self.parse_variable()?;
+                self.define_variable(ident_id);
+
+                if !self.advance_if(token::Type::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(token::Type::RParen, "Expect ')' after parameters.")?;
+        self.consume(token::Type::LBrace, "Expect '{' before function body.")?;
+        self.block()?;
+
+        let function = Rc::new(self.finish().expect("TODO: handle this?"));
+        let const_id = self.chunk().write_const(Value::Function(function));
+        self.emit(OpCode::Constant(const_id));
+        Ok(())
     }
 
     fn var_declaration(&mut self) -> Result<(), ParseError> {
@@ -229,7 +283,8 @@ impl<'a> Compiler<'a> {
             token::Type::Semicolon,
             "Expect ';' after variable declaration",
         )?;
-        self.define_variable(ident_id)
+        self.define_variable(ident_id);
+        Ok(())
     }
 
     fn parse_variable(&mut self) -> Result<u8, ParseError> {
@@ -238,35 +293,20 @@ impl<'a> Compiler<'a> {
         Ok(self.identifier_constant())
     }
 
-    fn define_variable(&mut self, ident_id: u8) -> Result<(), ParseError> {
-        // Local variables are not looked up by name. There's no need to stuff
-        // the variable name into the constant table.
-        if self.nesting().scope_depth > 0 {
-            self.nesting_mut()
-                .locals
-                .last_mut()
-                .expect("We just pushed a local.")
-                .initialized = true;
-            return Ok(());
-        }
-        self.emit(OpCode::DefineGlobal(ident_id));
-        Ok(())
-    }
-
     fn identifier_constant(&mut self) -> u8 {
-        if self.nesting().scope_depth > 0 {
+        if self.nest().scope_depth > 0 {
             0 // A dummy value used when we're not in the global scope
         } else {
             let name = intern::id(self.previous_token.lexeme);
-            self.function_mut().chunk.write_const(Value::String(name))
+            self.chunk().write_const(Value::String(name))
         }
     }
 
     fn declare_variable(&mut self) -> Result<(), ParseError> {
-        if self.nesting().scope_depth == 0 {
+        if self.nest().scope_depth == 0 {
             return Ok(());
         }
-        if self.nesting().locals.len() == MAX_STACK {
+        if self.nest().locals.len() == MAX_STACK {
             return Err(ParseError::InvalidDeclaration(
                 self.previous_token.pos,
                 self.previous_token.lexeme.to_string(),
@@ -275,8 +315,8 @@ impl<'a> Compiler<'a> {
         }
 
         let name = intern::id(self.previous_token.lexeme);
-        for l in self.nesting().locals.iter() {
-            if l.initialized && l.depth < self.nesting().scope_depth {
+        for l in self.nest().locals.iter() {
+            if l.initialized && l.depth < self.nest().scope_depth {
                 break;
             }
             if l.name == name {
@@ -287,9 +327,30 @@ impl<'a> Compiler<'a> {
                 ));
             }
         }
-        let scope_depth = self.nesting().scope_depth;
-        self.nesting_mut().locals.push((name, scope_depth).into());
+        let scope_depth = self.nest().scope_depth;
+        self.nest_mut().locals.push((name, scope_depth).into());
         Ok(())
+    }
+
+    fn define_variable(&mut self, ident_id: u8) {
+        // Local variables are not looked up by name. There's no need to stuff
+        // the variable name into the constant table.
+        if self.nest().scope_depth > 0 {
+            self.mark_initialized();
+        } else {
+            self.emit(OpCode::DefineGlobal(ident_id));
+        }
+    }
+
+    fn mark_initialized(&mut self) {
+        if self.nest().scope_depth == 0 {
+            return;
+        }
+        self.nest_mut()
+            .locals
+            .last_mut()
+            .expect("We just pushed a local.")
+            .initialized = true;
     }
 
     fn statement(&mut self) -> Result<(), ParseError> {
@@ -321,17 +382,17 @@ impl<'a> Compiler<'a> {
     }
 
     fn begin_scope(&mut self) {
-        self.nesting_mut().scope_depth += 1;
+        self.nest_mut().scope_depth += 1;
     }
 
     fn end_scope(&mut self) {
-        self.nesting_mut().scope_depth -= 1;
-        while let Some(l) = self.nesting().locals.last() {
-            if l.depth <= self.nesting().scope_depth {
+        self.nest_mut().scope_depth -= 1;
+        while let Some(l) = self.nest().locals.last() {
+            if l.depth <= self.nest().scope_depth {
                 break;
             }
             self.emit(OpCode::Pop);
-            self.nesting_mut().locals.pop();
+            self.nest_mut().locals.pop();
         }
     }
 
@@ -360,7 +421,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn while_statement(&mut self) -> Result<(), ParseError> {
-        let loop_start = self.function_mut().chunk.instructions_count();
+        let loop_start = self.chunk().instructions_count();
         self.consume(token::Type::LParen, "Expect '(' after 'while'")?;
         self.expression()?;
         self.consume(token::Type::RParen, "Expect ')' after condition")?;
@@ -388,7 +449,7 @@ impl<'a> Compiler<'a> {
             self.expression_statement()?;
         }
 
-        let mut loop_start = self.function_mut().chunk.instructions_count();
+        let mut loop_start = self.chunk().instructions_count();
 
         // conditional clause
         let exit_jump = if !self.advance_if(token::Type::Semicolon) {
@@ -408,7 +469,7 @@ impl<'a> Compiler<'a> {
         if !self.advance_if(token::Type::RParen) {
             // immediately jump to the loop's body, skipping the increment expression
             let body_jump = self.emit_jump(OpCode::Jump);
-            let increment_start = self.function_mut().chunk.instructions_count();
+            let increment_start = self.chunk().instructions_count();
             // increment expression
             self.expression()?;
             // pop expression result
@@ -527,7 +588,7 @@ impl<'a> Compiler<'a> {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
         } else {
             let name = intern::id(self.previous_token.lexeme);
-            let ident_id = self.function_mut().chunk.write_const(Value::String(name));
+            let ident_id = self.chunk().write_const(Value::String(name));
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
         };
 
@@ -541,7 +602,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&self, name: &Token) -> Result<Option<u8>, ParseError> {
-        self.nesting()
+        self.nest()
             .locals
             .iter()
             .enumerate()
@@ -564,7 +625,7 @@ impl<'a> Compiler<'a> {
     fn string(&mut self) {
         let value =
             intern::id(&self.previous_token.lexeme[1..self.previous_token.lexeme.len() - 1]);
-        let constant = self.function_mut().chunk.write_const(Value::String(value));
+        let constant = self.chunk().write_const(Value::String(value));
         self.emit(OpCode::Constant(constant));
     }
 
@@ -572,7 +633,7 @@ impl<'a> Compiler<'a> {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
-        let constant = self.function_mut().chunk.write_const(Value::Number(value));
+        let constant = self.chunk().write_const(Value::Number(value));
         self.emit(OpCode::Constant(constant));
     }
 
