@@ -36,7 +36,7 @@ impl Default for VM {
             globals: HashMap::default(),
         };
         vm.define_native("clock", clock_native)
-            .expect("Something's wrong.");
+            .expect("Unreachable");
         vm
     }
 }
@@ -100,7 +100,7 @@ impl VM {
                     let frame = self
                         .frames
                         .pop()
-                        .expect("Should have exited when there's no frame left");
+                        .expect("Cannot be empty");
                     if self.frames.is_empty() {
                         self.pop();
                         return Ok(());
@@ -335,15 +335,11 @@ impl VM {
     }
 
     fn frame(&self) -> &CallFrame {
-        self.frames
-            .last()
-            .expect("There's always one callframe for the script.")
+        self.frames.last().expect("Cannot be empty")
     }
 
     fn frame_mut(&mut self) -> &mut CallFrame {
-        self.frames
-            .last_mut()
-            .expect("There's always one callframe for the script.")
+        self.frames.last_mut().expect("Cannot be empty")
     }
 
     fn peek(&self, steps: usize) -> &Value {

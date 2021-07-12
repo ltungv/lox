@@ -27,7 +27,7 @@ pub fn str(id: StringId) -> String {
         intern
             .borrow_mut()
             .resolve(id)
-            .expect("String must be allocated prior to access.")
+            .expect("Preallocated")
             .to_string()
     })
 }

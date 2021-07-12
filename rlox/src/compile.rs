@@ -169,13 +169,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn nest(&self) -> &Nesting {
-        self.nestings.last().expect("There's always a nesting item")
+        self.nestings.last().expect("Cannot be empty")
     }
 
     fn nest_mut(&mut self) -> &mut Nesting {
-        self.nestings
-            .last_mut()
-            .expect("There's always a nesting item")
+        self.nestings.last_mut().expect("Cannot be empty")
     }
 
     fn make_const(&mut self, v: Value) -> Result<u8, ParseError> {
@@ -286,7 +284,7 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::LBrace, "Expect '{' before function body")?;
         self.block()?;
 
-        let fun = Rc::new(self.finish().expect("No errors have happened"));
+        let fun = Rc::new(self.finish().expect("Errors are catched above."));
         let const_id = self.make_const(Value::Fun(fun))?;
         self.emit(OpCode::Constant(const_id));
         Ok(())
@@ -371,7 +369,7 @@ impl<'a> Compiler<'a> {
         self.nest_mut()
             .locals
             .last_mut()
-            .expect("We just pushed a local")
+            .expect("Just pushed")
             .initialized = true;
     }
 
@@ -704,7 +702,7 @@ impl<'a> Compiler<'a> {
     fn number(&mut self) -> Result<(), ParseError> {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
-            .expect("Scanner must ensure that the lexeme contains a valid f64 string");
+            .expect("Validated by scanner");
         let constant = self.make_const(Value::Number(value))?;
         self.emit(OpCode::Constant(constant));
         Ok(())
