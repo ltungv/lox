@@ -92,6 +92,8 @@ pub enum Value {
     String(StringId),
     /// A function object
     Function(Rc<Function>),
+    /// A native function object
+    Native(Native),
 }
 
 impl fmt::Display for Value {
@@ -108,6 +110,7 @@ impl fmt::Display for Value {
             }
             Self::String(id) => write!(f, "{}", intern::str(*id)),
             Self::Function(obj) => write!(f, "{}", obj),
+            Self::Native(n) => write!(f, "{}", n),
         }
     }
 }
@@ -167,6 +170,22 @@ impl Default for Function {
     }
 }
 
+/// A native function
+#[derive(Clone)]
+pub struct Native(pub fn(&[Value]) -> Value);
+
+impl fmt::Display for Native {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "<native fn>")
+    }
+}
+
+impl fmt::Debug for Native {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "<native fn>")
+    }
+}
+
 /// A chunk holds a sequence of instructions to be executes and their data
 ///
 /// ```
@@ -219,12 +238,17 @@ impl Chunk {
     /// Add a constant value to the chunk and return it position in the Vec
     pub fn write_const(&mut self, val: Value) -> u8 {
         self.constants.push(val);
-        self.constants.len() as u8 - 1
+        (self.constants.len() - 1) as u8
     }
 
     /// Read the constant at the given index
     pub fn read_const(&self, idx: u8) -> Value {
         self.constants[idx as usize].clone()
+    }
+
+    /// Get the number of constants stored in the chunk
+    pub fn const_count(&self) -> usize {
+        self.constants.len()
     }
 }
 

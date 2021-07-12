@@ -1,6 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{intern, Chunk, Compiler, Error, Function, OpCode, RuntimeError, StringId, Value};
+use crate::{
+    intern, Chunk, Compiler, Error, Function, Native, OpCode, RuntimeError, StringId, Value,
+};
 
 #[cfg(debug_assertions)]
 use crate::disassemble_instruction;
@@ -28,11 +30,14 @@ pub struct VM {
 
 impl Default for VM {
     fn default() -> Self {
-        Self {
+        let mut vm = Self {
             stack: Vec::with_capacity(MAX_STACK),
             frames: Vec::with_capacity(MAX_FRAMES),
             globals: HashMap::default(),
-        }
+        };
+        vm.define_native("clock", clock_native)
+            .expect("Something's wrong.");
+        vm
     }
 }
 
@@ -266,6 +271,14 @@ impl VM {
     fn call_value(&mut self, callee: Value, argc: u8) -> Result<(), RuntimeError> {
         match callee {
             Value::Function(f) => self.call(f, argc),
+            Value::Native(Native(f)) => {
+                let args = &self.stack[self.stack.len() - argc as usize..];
+                let res = f(args);
+                for _ in 1..argc {
+                    self.pop();
+                }
+                self.push(res)
+            }
             _ => Err(RuntimeError::InvalidCall(
                 "Can only call functions and classes".to_string(),
             )),
@@ -275,7 +288,7 @@ impl VM {
     fn call(&mut self, function: Rc<Function>, argc: u8) -> Result<(), RuntimeError> {
         if argc != function.arity {
             return Err(RuntimeError::InvalidCall(format!(
-                "Expect {} arguments but got {}.",
+                "Expected {} arguments but got {}",
                 function.arity, argc
             )));
         }
@@ -290,6 +303,20 @@ impl VM {
             slot: self.stack.len() - argc as usize - 1,
         };
         self.frames.push(frame);
+        Ok(())
+    }
+
+    fn define_native(
+        &mut self,
+        name: &str,
+        native: fn(&[Value]) -> Value,
+    ) -> Result<(), RuntimeError> {
+        let name = intern::id(name);
+        self.push(Value::String(name))?;
+        self.push(Value::Native(Native(native)))?;
+        self.globals.insert(name, self.stack[1].clone());
+        self.pop();
+        self.pop();
         Ok(())
     }
 
@@ -338,6 +365,14 @@ impl VM {
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Invalid bytecodes")
     }
+}
+
+fn clock_native(_args: &[Value]) -> Value {
+    let start = std::time::SystemTime::now();
+    let since_epoch = start
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Time went backwards");
+    Value::Number(since_epoch.as_secs_f64())
 }
 
 #[cfg(debug_assertions)]

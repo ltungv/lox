@@ -9,7 +9,13 @@ use crate::{
 use crate::disassemble_chunk;
 
 /// Maximum number of parameters a function can take
-pub const MAX_PARAMS: u8 = 255;
+pub const MAX_PARAMS: usize = 255;
+
+/// Maximum number of parameters a function can take
+pub const MAX_LOCAL_VARIABLES: usize = 256;
+
+/// Maximum number of parameters a function can take
+pub const MAX_CHUNK_CONSTANTS: usize = 256;
 
 /// Function object's type.
 ///
@@ -163,15 +169,25 @@ impl<'a> Compiler<'a> {
     }
 
     fn nest(&self) -> &Nesting {
-        self.nestings
-            .last()
-            .expect("There's always a nesting item")
+        self.nestings.last().expect("There's always a nesting item")
     }
 
     fn nest_mut(&mut self) -> &mut Nesting {
         self.nestings
             .last_mut()
             .expect("There's always a nesting item")
+    }
+
+    fn make_const(&mut self, v: Value) -> Result<u8, ParseError> {
+        if self.chunk().const_count() == MAX_CHUNK_CONSTANTS {
+            return Err(ParseError::LimitReached(
+                self.previous_token.pos,
+                self.previous_token.lexeme.to_string(),
+                "Too many constants in one chunk",
+            ));
+        }
+        let const_id = self.chunk().write_const(v);
+        Ok(const_id)
     }
 
     fn emit(&mut self, op: OpCode) {
@@ -249,7 +265,7 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::LParen, "Expect '(' after function name")?;
         if self.current_token.typ != token::Type::RParen {
             loop {
-                if self.nest_mut().function.arity == MAX_PARAMS {
+                if self.nest_mut().function.arity as usize == MAX_PARAMS {
                     return Err(ParseError::LimitReached(
                         self.current_token.pos,
                         self.current_token.lexeme.to_string(),
@@ -271,7 +287,7 @@ impl<'a> Compiler<'a> {
         self.block()?;
 
         let function = Rc::new(self.finish().expect("No errors have happened"));
-        let const_id = self.chunk().write_const(Value::Function(function));
+        let const_id = self.make_const(Value::Function(function))?;
         self.emit(OpCode::Constant(const_id));
         Ok(())
     }
@@ -296,15 +312,15 @@ impl<'a> Compiler<'a> {
     fn parse_variable(&mut self) -> Result<u8, ParseError> {
         self.consume(token::Type::Ident, "Expect variable name")?;
         self.declare_variable()?;
-        Ok(self.identifier_constant())
+        self.identifier_constant()
     }
 
-    fn identifier_constant(&mut self) -> u8 {
+    fn identifier_constant(&mut self) -> Result<u8, ParseError> {
         if self.nest().scope_depth > 0 {
-            0 // A dummy value used when we're not in the global scope
+            Ok(0) // A dummy value used when we're not in the global scope
         } else {
             let name = intern::id(self.previous_token.lexeme);
-            self.chunk().write_const(Value::String(name))
+            self.make_const(Value::String(name))
         }
     }
 
@@ -312,7 +328,7 @@ impl<'a> Compiler<'a> {
         if self.nest().scope_depth == 0 {
             return Ok(());
         }
-        if self.nest().locals.len() == MAX_STACK {
+        if self.nest().locals.len() == MAX_LOCAL_VARIABLES {
             return Err(ParseError::InvalidDeclaration(
                 self.previous_token.pos,
                 self.previous_token.lexeme.to_string(),
@@ -635,7 +651,7 @@ impl<'a> Compiler<'a> {
             }
         }
         self.consume(token::Type::RParen, "Expect ')' after arguments")?;
-        Ok(arg_count)
+        Ok(arg_count as u8)
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
@@ -643,7 +659,7 @@ impl<'a> Compiler<'a> {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
         } else {
             let name = intern::id(self.previous_token.lexeme);
-            let ident_id = self.chunk().write_const(Value::String(name));
+            let ident_id = self.make_const(Value::String(name))?;
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
         };
 
@@ -677,19 +693,21 @@ impl<'a> Compiler<'a> {
             .transpose()
     }
 
-    fn string(&mut self) {
+    fn string(&mut self) -> Result<(), ParseError> {
         let value =
             intern::id(&self.previous_token.lexeme[1..self.previous_token.lexeme.len() - 1]);
-        let constant = self.chunk().write_const(Value::String(value));
+        let constant = self.make_const(Value::String(value))?;
         self.emit(OpCode::Constant(constant));
+        Ok(())
     }
 
-    fn number(&mut self) {
+    fn number(&mut self) -> Result<(), ParseError> {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string");
-        let constant = self.chunk().write_const(Value::Number(value));
+        let constant = self.make_const(Value::Number(value))?;
         self.emit(OpCode::Constant(constant));
+        Ok(())
     }
 
     fn literal(&mut self) {
@@ -732,8 +750,8 @@ impl<'a> Compiler<'a> {
             token::Type::LParen => self.grouping()?,
             token::Type::Minus | token::Type::Bang => self.unary()?,
             token::Type::Ident => self.variable(can_assign)?,
-            token::Type::String => self.string(),
-            token::Type::Number => self.number(),
+            token::Type::String => self.string()?,
+            token::Type::Number => self.number()?,
             token::Type::True | token::Type::False | token::Type::Nil => self.literal(),
             _ => {
                 return Err(ParseError::UnexpectedToken(
