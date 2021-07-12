@@ -1,26 +1,38 @@
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap, rc::Rc};
 
-use crate::{intern, Chunk, Compiler, Error, OpCode, Position, RuntimeError, StringId, Value};
+use crate::{
+    intern, Compiler, Error, Function, FunctionType, OpCode, RuntimeError, StringId, Value,
+};
 
 #[cfg(debug_assertions)]
-use crate::{disassemble_chunk, disassemble_instruction};
+use crate::disassemble_instruction;
+
+/// We're limiting the frames's size to be in specification with clox
+pub const MAX_FRAMES: usize = 64;
 
 /// We're limiting the stack's size to be in specification with clox
-pub const MAX_STACK_SIZE: usize = 256;
+pub const MAX_STACK: usize = u8::MAX as usize * MAX_FRAMES;
+
+#[derive(Debug)]
+struct CallFrame {
+    function: Rc<Function>,
+    ip: usize,
+    slot: usize,
+}
 
 /// A bytecode virtual machine for the Lox programming language
 #[derive(Debug)]
 pub struct VM {
-    ip: usize,
     stack: Vec<Value>,
+    frames: Vec<CallFrame>,
     globals: HashMap<StringId, Value>,
 }
 
 impl Default for VM {
     fn default() -> Self {
         Self {
-            ip: 0,
-            stack: Vec::with_capacity(MAX_STACK_SIZE),
+            stack: Vec::with_capacity(MAX_STACK),
+            frames: Vec::with_capacity(MAX_FRAMES),
             globals: HashMap::default(),
         }
     }
@@ -29,43 +41,49 @@ impl Default for VM {
 impl VM {
     /// Load and run the virtual machine on the given chunk
     pub fn interpret(&mut self, src: &str) -> Result<(), Error> {
-        let mut compiler = Compiler::new(src);
+        let mut compiler = Compiler::new(src, FunctionType::Script);
         compiler.compile();
-        let mut chunk = compiler.finish().ok_or(Error::Compile)?;
-        chunk.write_instruction(OpCode::Return, Position::default());
 
-        #[cfg(debug_assertions)]
-        disassemble_chunk(&chunk, "code");
+        let function = Rc::new(compiler.finish().ok_or(Error::Compile)?);
+        let frame = CallFrame {
+            function: Rc::clone(&function),
+            ip: 0,
+            slot: self.stack.len(),
+        };
+        self.stack.push(Value::Function(function));
+        self.frames.push(frame);
 
-        self.ip = 0;
-        self.run(&chunk)?;
+        self.run()?;
         Ok(())
     }
 
     /// Run the virtual machine with it currently given chunk.
-    fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
+        let (function, frame_slot) = {
+            let frame = self.frames.last().unwrap().borrow();
+            (Rc::clone(&frame.function), frame.slot)
+        };
         loop {
             #[cfg(debug_assertions)]
             {
                 print_stack_trace(&self.stack);
-                disassemble_instruction(&chunk, self.ip);
+                disassemble_instruction(&function.chunk, self.frame_ip() as usize);
             }
-
-            let (opcode, pos) = chunk.read_instruction(self.ip);
-            self.ip += 1;
+            let (opcode, pos) = function.chunk.read_instruction(self.frame_ip());
+            *self.frame_ip_mut() += 1;
             match opcode {
                 OpCode::Pop => {
                     self.pop()?;
                 }
                 OpCode::Loop(offset) => {
-                    self.ip -= *offset as usize;
+                    *self.frame_ip_mut() -= *offset as usize;
                 }
                 OpCode::Jump(offset) => {
-                    self.ip += *offset as usize;
+                    *self.frame_ip_mut() += *offset as usize;
                 }
                 OpCode::JumpIfFalse(offset) => {
                     if self.peek(0)?.is_falsey() {
-                        self.ip += *offset as usize;
+                        *self.frame_ip_mut() += *offset as usize;
                     }
                 }
                 OpCode::Return => {
@@ -77,15 +95,15 @@ impl VM {
                     println!("{}", v);
                 }
                 OpCode::GetLocal(ref slot) => {
-                    let local = self.stack[*slot as usize].clone();
+                    let local = self.stack[frame_slot + *slot as usize].clone();
                     self.push(local)?;
                 }
                 OpCode::SetLocal(ref slot) => {
                     let val = self.peek(0)?;
-                    self.stack[*slot as usize] = val.clone();
+                    self.stack[frame_slot + *slot as usize] = val.clone();
                 }
                 OpCode::DefineGlobal(ref const_id) => {
-                    let name = chunk.read_const(*const_id);
+                    let name = function.chunk.read_const(*const_id);
                     if let Value::String(name) = name {
                         let val = self.peek(0)?.clone();
                         self.globals.insert(*name, val);
@@ -95,7 +113,7 @@ impl VM {
                     }
                 }
                 OpCode::GetGlobal(ref const_id) => {
-                    let name = chunk.read_const(*const_id);
+                    let name = function.chunk.read_const(*const_id);
                     if let Value::String(name) = name {
                         let val = self
                             .globals
@@ -110,7 +128,7 @@ impl VM {
                     }
                 }
                 OpCode::SetGlobal(ref const_id) => {
-                    let name = chunk.read_const(*const_id);
+                    let name = function.chunk.read_const(*const_id);
                     if let Value::String(name) = name {
                         let val = self.peek(0)?.clone();
                         if !self.globals.contains_key(name) {
@@ -122,7 +140,7 @@ impl VM {
                     }
                 }
                 OpCode::Constant(ref const_id) => {
-                    let val = chunk.read_const(*const_id);
+                    let val = function.chunk.read_const(*const_id);
                     self.push(val.clone())?;
                 }
                 OpCode::Nil => self.push(Value::Nil)?,
@@ -238,6 +256,22 @@ impl VM {
         }
     }
 
+    fn frame_ip(&mut self) -> usize {
+        let frame = self
+            .frames
+            .last()
+            .expect("There's always one callframe for the script.");
+        frame.ip
+    }
+
+    fn frame_ip_mut(&mut self) -> &mut usize {
+        let frame = self
+            .frames
+            .last_mut()
+            .expect("There's always one callframe for the script.");
+        &mut frame.ip
+    }
+
     fn peek(&self, steps: usize) -> Result<&Value, RuntimeError> {
         self.stack
             .get(self.stack.len() - 1 - steps)
@@ -250,7 +284,7 @@ impl VM {
     }
 
     fn push(&mut self, val: Value) -> Result<(), RuntimeError> {
-        if self.stack.len() == MAX_STACK_SIZE {
+        if self.stack.len() == MAX_STACK {
             return Err(RuntimeError::StackOverflow);
         }
         self.stack.push(val);

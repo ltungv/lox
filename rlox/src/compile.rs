@@ -1,7 +1,19 @@
 use crate::{
-    intern, token, Chunk, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
-    MAX_STACK_SIZE,
+    disassemble_chunk, intern, token, Chunk, Function, OpCode, ParseError, Position, Scanner,
+    StringId, Token, Value, MAX_STACK,
 };
+
+/// Function object's type.
+///
+/// This is used to so that the compiler knows what kind of chunk it's current compilling.
+/// We are treating the entire script as a implicit function.
+#[derive(Debug)]
+pub enum FunctionType {
+    /// The compiled chunk is of a function
+    Function,
+    /// The compiled chunk is of the input script
+    Script,
+}
 
 /// Scan for tokens and emit corresponding bytecodes.
 ///
@@ -87,14 +99,23 @@ pub struct Compiler<'a> {
     previous_token: Token<'a>,
     had_error: bool,
 
-    chunk: Chunk,
+    func: Function,
+    func_typ: FunctionType,
     locals: Vec<Local>,
     scope_depth: usize,
 }
 
 impl<'a> Compiler<'a> {
     /// Create a new parser
-    pub fn new(src: &'a str) -> Self {
+    pub fn new(src: &'a str, fun_type: FunctionType) -> Self {
+        // The first slot on the stack is reserved for the callframe
+        let mut locals = Vec::with_capacity(MAX_STACK);
+        locals.push(Local {
+            name: intern::id(""),
+            depth: 0,
+            initialized: false,
+        });
+
         Self {
             scanner: Scanner::new(src),
             current_token: Token {
@@ -108,8 +129,13 @@ impl<'a> Compiler<'a> {
                 pos: Position::default(),
             },
             had_error: false,
-            chunk: Chunk::default(),
-            locals: Vec::with_capacity(MAX_STACK_SIZE),
+            func: Function {
+                name: intern::id(""),
+                arity: 0,
+                chunk: Chunk::default(),
+            },
+            func_typ: fun_type,
+            locals,
             scope_depth: 0,
         }
     }
@@ -127,26 +153,48 @@ impl<'a> Compiler<'a> {
     }
 
     /// Return the compiled bytecode chunk if the process finishes without error
-    pub fn finish(self) -> Option<Chunk> {
+    pub fn finish(mut self) -> Option<Function> {
         if self.had_error {
             None
         } else {
-            Some(self.chunk)
+            self.emit(OpCode::Return);
+
+            #[cfg(debug_assertions)]
+            disassemble_chunk(&self.func.chunk, format!("{}", self.func).as_str());
+
+            Some(self.func)
         }
     }
 
     fn emit(&mut self, op: OpCode) {
-        self.chunk.write_instruction(op, self.previous_token.pos);
+        self.func
+            .chunk
+            .write_instruction(op, self.previous_token.pos);
     }
 
-    fn emit_jump(&mut self, op: OpCode) -> usize {
-        self.emit(op);
-        self.chunk.instructions_count()
+    fn emit_jump<O: Fn(u16) -> OpCode>(&mut self, op: O) -> usize {
+        self.emit(op(0xFFFF));
+        self.func.chunk.instructions_count()
+    }
+
+    fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
+        let offset = self.func.chunk.instructions_count() - jump;
+        if offset > u16::MAX as usize {
+            return Err(ParseError::JumpTooLarge(
+                self.current_token.pos,
+                self.current_token.lexeme.to_string(),
+                "Too much code to jump over",
+            ));
+        }
+        self.func
+            .chunk
+            .patch_jump_instruction(jump - 1, offset as u16);
+        Ok(())
     }
 
     fn emit_loop(&mut self, loop_start: usize) -> Result<(), ParseError> {
         // +1 because the offset also takes into account the newly emitted loop opcode
-        let offset = self.chunk.instructions_count() - loop_start + 1;
+        let offset = self.func.chunk.instructions_count() - loop_start + 1;
         if offset > u16::MAX as usize {
             return Err(ParseError::JumpTooLarge(
                 self.previous_token.pos,
@@ -205,7 +253,8 @@ impl<'a> Compiler<'a> {
         if self.scope_depth > 0 {
             0 // A dummy value used when we're not in the global scope
         } else {
-            self.chunk
+            self.func
+                .chunk
                 .write_const(Value::String(intern::id(self.previous_token.lexeme)))
         }
     }
@@ -214,7 +263,7 @@ impl<'a> Compiler<'a> {
         if self.scope_depth == 0 {
             return Ok(());
         }
-        if self.locals.len() == MAX_STACK_SIZE {
+        if self.locals.len() == MAX_STACK {
             return Err(ParseError::InvalidDeclaration(
                 self.previous_token.pos,
                 self.previous_token.lexeme.to_string(),
@@ -289,14 +338,14 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::RParen, "Expect ')' after condition")?;
 
         // This jumps to the else clause
-        let then_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+        let then_jump = self.emit_jump(OpCode::JumpIfFalse);
         // Jump does not pop the conditional out of the stack, so we do it manually.
         // Here we pop the true value.
         self.emit(OpCode::Pop);
         self.statement()?;
 
         // This jumps through the else clause
-        let else_jump = self.emit_jump(OpCode::Jump(0xFFFF));
+        let else_jump = self.emit_jump(OpCode::Jump);
         self.patch_jump(then_jump)?;
         // Here we pop the false value.
         self.emit(OpCode::Pop);
@@ -307,26 +356,13 @@ impl<'a> Compiler<'a> {
         self.patch_jump(else_jump)
     }
 
-    fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
-        let offset = self.chunk.instructions_count() - jump;
-        if offset > u16::MAX as usize {
-            return Err(ParseError::JumpTooLarge(
-                self.current_token.pos,
-                self.current_token.lexeme.to_string(),
-                "Too much code to jump over",
-            ));
-        }
-        self.chunk.patch_jump_instruction(jump - 1, offset as u16);
-        Ok(())
-    }
-
     fn while_statement(&mut self) -> Result<(), ParseError> {
-        let loop_start = self.chunk.instructions_count();
+        let loop_start = self.func.chunk.instructions_count();
         self.consume(token::Type::LParen, "Expect '(' after 'while'")?;
         self.expression()?;
         self.consume(token::Type::RParen, "Expect ')' after condition")?;
 
-        let exit_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+        let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
         self.emit(OpCode::Pop);
 
         self.statement()?;
@@ -349,7 +385,7 @@ impl<'a> Compiler<'a> {
             self.expression_statement()?;
         }
 
-        let mut loop_start = self.chunk.instructions_count();
+        let mut loop_start = self.func.chunk.instructions_count();
 
         // conditional clause
         let exit_jump = if !self.advance_if(token::Type::Semicolon) {
@@ -357,7 +393,7 @@ impl<'a> Compiler<'a> {
             self.expression()?;
             self.consume(token::Type::Semicolon, "Expect ';' after loop condition.")?;
             // exit if consitional expression is falsey
-            let exit_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+            let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
             // pop true when not jump
             self.emit(OpCode::Pop);
             Some(exit_jump)
@@ -368,8 +404,8 @@ impl<'a> Compiler<'a> {
         // increment clause
         if !self.advance_if(token::Type::RParen) {
             // immediately jump to the loop's body, skipping the increment expression
-            let body_jump = self.emit_jump(OpCode::Jump(0xFFFF));
-            let increment_start = self.chunk.instructions_count();
+            let body_jump = self.emit_jump(OpCode::Jump);
+            let increment_start = self.func.chunk.instructions_count();
             // increment expression
             self.expression()?;
             // pop expression result
@@ -421,8 +457,8 @@ impl<'a> Compiler<'a> {
         // If the value on top of the stack is falsey, we make a small jump skipping passs the jump
         // right beneath. Otherwise we go to the jump right beneath us to jump pass the rest of the
         // operands. This simulates JumpIfTrue without making a new opcode.
-        let else_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
-        let end_jump = self.emit_jump(OpCode::Jump(0xFFFF));
+        let else_jump = self.emit_jump(OpCode::JumpIfFalse);
+        let end_jump = self.emit_jump(OpCode::Jump);
 
         self.patch_jump(else_jump)?;
         // Pop false value if not short-circuited
@@ -436,7 +472,7 @@ impl<'a> Compiler<'a> {
         // Short-circuit jump.
         // If the value on top of the stack is falsey, jumps pass the rest of the
         // operands.
-        let end_jump = self.emit_jump(OpCode::JumpIfFalse(0xFFFF));
+        let end_jump = self.emit_jump(OpCode::JumpIfFalse);
         // Pop true value if not short-circuited
         self.emit(OpCode::Pop);
 
@@ -488,6 +524,7 @@ impl<'a> Compiler<'a> {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
         } else {
             let ident_id = self
+                .func
                 .chunk
                 .write_const(Value::String(intern::id(self.previous_token.lexeme)));
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
@@ -523,7 +560,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn string(&mut self) {
-        let constant = self.chunk.write_const(Value::String(intern::id(
+        let constant = self.func.chunk.write_const(Value::String(intern::id(
             &self.previous_token.lexeme[1..self.previous_token.lexeme.len() - 1],
         )));
         self.emit(OpCode::Constant(constant));
@@ -533,7 +570,7 @@ impl<'a> Compiler<'a> {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
             .expect("Scanner must ensure that the lexeme contains a valid f64 string.");
-        let constant = self.chunk.write_const(Value::Number(value));
+        let constant = self.func.chunk.write_const(Value::Number(value));
         self.emit(OpCode::Constant(constant));
     }
 

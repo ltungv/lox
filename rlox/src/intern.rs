@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use string_interner::{symbol::SymbolU32, DefaultBackend, DefaultHashBuilder};
 
-use crate::MAX_STACK_SIZE;
+use crate::MAX_STACK;
 
 /// Default string interner
 pub type StringInterner<B = DefaultBackend<StringId>, H = DefaultHashBuilder> =
@@ -12,7 +12,7 @@ pub type StringInterner<B = DefaultBackend<StringId>, H = DefaultHashBuilder> =
 pub type StringId = SymbolU32;
 
 thread_local! {
-    static INTERN: RefCell<StringInterner> = RefCell::new(StringInterner::with_capacity(MAX_STACK_SIZE));
+    static INTERN: RefCell<StringInterner> = RefCell::new(StringInterner::with_capacity(MAX_STACK));
 }
 
 /// Intern a string if it has not been allocated by the global interner,

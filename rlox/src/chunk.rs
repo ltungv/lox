@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 use crate::{intern, Position, StringId};
 
@@ -88,6 +88,8 @@ pub enum Value {
     /// character array and one that is "constant" such that it points to the original source
     /// or some non-freeable location.
     String(StringId),
+    /// A function object
+    Function(Rc<Function>),
 }
 
 impl fmt::Display for Value {
@@ -102,7 +104,8 @@ impl fmt::Display for Value {
                     write!(f, "{:?}", n)
                 }
             }
-            Value::String(id) => write!(f, "{}", intern::str(*id)),
+            Self::String(id) => write!(f, "{}", intern::str(*id)),
+            Self::Function(obj) => write!(f, "{}", obj),
         }
     }
 }
@@ -126,6 +129,28 @@ impl Value {
             (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
             (Self::String(s1), Self::String(s2)) => s1 == s2,
             _ => false,
+        }
+    }
+}
+
+/// A function object that holds the bytecode of the function along with other metadata
+#[derive(Debug)]
+pub struct Function {
+    /// The name of the function
+    pub name: StringId,
+    /// Number of parameters the function has
+    pub arity: u8,
+    /// The bytecode chunk of this function
+    pub chunk: Chunk,
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        let name_str = intern::str(self.name);
+        if name_str.is_empty() {
+            write!(f, "<script>")
+        } else {
+            write!(f, "<fn {}>", name_str)
         }
     }
 }
