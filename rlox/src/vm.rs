@@ -35,7 +35,7 @@ impl Default for VM {
             frames: Vec::with_capacity(MAX_FRAMES),
             globals: HashMap::default(),
         };
-        vm.define_native("clock", clock_native)
+        vm.define_native("clock", 0, clock_native)
             .expect("Unreachable");
         vm
     }
@@ -97,10 +97,7 @@ impl VM {
                 }
                 OpCode::Return => {
                     let val = self.pop();
-                    let frame = self
-                        .frames
-                        .pop()
-                        .expect("Cannot be empty");
+                    let frame = self.frames.pop().expect("Cannot be empty");
                     if self.frames.is_empty() {
                         self.pop();
                         return Ok(());
@@ -274,14 +271,7 @@ impl VM {
     fn call_value(&mut self, callee: Value, argc: u8) -> Result<(), RuntimeError> {
         match callee {
             Value::Fun(f) => self.call(f, argc),
-            Value::NativeFun(ObjNativeFun(f)) => {
-                let args = &self.stack[self.stack.len() - argc as usize..];
-                let res = f(args);
-                for _ in 1..argc {
-                    self.pop();
-                }
-                self.push(res)
-            }
+            Value::NativeFun(f) => self.call_native(f, argc),
             _ => Err(RuntimeError::InvalidCall(
                 "Can only call functions and classes".to_string(),
             )),
@@ -309,15 +299,35 @@ impl VM {
         Ok(())
     }
 
+    fn call_native(&mut self, fun: ObjNativeFun, argc: u8) -> Result<(), RuntimeError> {
+        if argc != fun.arity {
+            return Err(RuntimeError::InvalidCall(format!(
+                "Expected {} arguments but got {}",
+                fun.arity, argc
+            )));
+        }
+        let argc = argc as usize;
+        let args = &self.stack[self.stack.len() - argc..];
+        let call = fun.call;
+        let res = call(args);
+        self.discard_top(argc - 1);
+        self.push(res)
+    }
+
     fn define_native(
         &mut self,
         name: &str,
-        native: fn(&[Value]) -> Value,
+        arity: u8,
+        call: fn(&[Value]) -> Value,
     ) -> Result<(), RuntimeError> {
-        let name = intern::id(name);
-        self.push(Value::String(name))?;
-        self.push(Value::NativeFun(ObjNativeFun(native)))?;
-        self.globals.insert(name, self.stack[1].clone());
+        self.push(Value::String(intern::id(name)))?;
+        self.push(Value::NativeFun(ObjNativeFun {
+            arity,
+            call,
+        }))?;
+        if let Value::String(name) = self.stack[0] {
+            self.globals.insert(name, self.stack[1].clone());
+        }
         self.pop();
         self.pop();
         Ok(())
@@ -363,6 +373,10 @@ impl VM {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Invalid bytecodes")
+    }
+
+    fn discard_top(&mut self, n: usize) {
+        self.stack.drain(..self.stack.len() - n);
     }
 }
 

@@ -5,6 +5,7 @@ A bytecode virtual machine written in Rust for the Lox programming language.
 ## Implemented challenges
 
 + [x] Do inplace update on the stack for operators that pop a value and push back a value immediately after.
++ [x] Check arity when calling native function
 + [ ] Memory efficient encoding for line information.
 + [ ] Dynamic VM' stack size. We already got this from Rust's Vec, but limiting ourself to 256.
 + [ ] Support `OP_CONSTANT_LONG` that takes a 24-bit number to extend the number of constants that can be contained.

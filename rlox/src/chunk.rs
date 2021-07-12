@@ -172,7 +172,12 @@ impl Default for ObjFun {
 
 /// A native function
 #[derive(Clone)]
-pub struct ObjNativeFun(pub fn(&[Value]) -> Value);
+pub struct ObjNativeFun {
+    /// Number of parameters
+    pub arity: u8,
+    /// Native function reference
+    pub call: fn(&[Value]) -> Value,
+}
 
 impl fmt::Display for ObjNativeFun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
@@ -238,7 +243,7 @@ impl Chunk {
     /// Add a constant value to the chunk and return it position in the Vec
     pub fn write_const(&mut self, val: Value) -> usize {
         self.constants.push(val);
-        self.constants.len() - 1 
+        self.constants.len() - 1
     }
 
     /// Read the constant at the given index
