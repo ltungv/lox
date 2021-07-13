@@ -6,17 +6,22 @@
 mod chunk;
 mod compile;
 mod error;
-mod intern;
+mod object;
 mod scan;
 mod token;
+mod value;
 mod vm;
+
+mod intern;
 
 pub use chunk::*;
 pub use compile::*;
 pub use error::*;
 pub use intern::*;
+pub use object::*;
 pub use scan::*;
 pub use token::*;
+pub use value::*;
 pub use vm::*;
 
 /// We're limiting the frames's size to be in specification with clox
@@ -33,3 +38,7 @@ pub const MAX_LOCAL_VARIABLES: usize = 256;
 
 /// Maximum number of parameters a function can take
 pub const MAX_CHUNK_CONSTANTS: usize = 256;
+
+/// Maximum number of upvalues a closure can have
+pub const MAX_UPVALUES: usize = 256;
+

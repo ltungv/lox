@@ -1,12 +1,107 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, OpCode, RuntimeError, StringId,
+    intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, RuntimeError, StringId, Upvalue,
     Value, MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
 use crate::disassemble_instruction;
+
+#[cfg(debug_assertions)]
+fn print_stack(stack: &[Value]) {
+    // print stack trace
+    print!("          ");
+    for val in stack {
+        print!("[ {} ]", val);
+    }
+    println!();
+}
+
+/// OpCode is a number that specifies the type of the instruction.
+///
+/// # Notes
+///
+/// If it was for performances purposes, the following options could be considered:
+/// + Having the opcode designed to be as close as possbible to existing lower-level instructions
+/// + Having specialized opcode for constant
+///
+/// We don't have a `OpCode::NotEqual` because we will transform `a != b` to `!(a == b)` to demonstrated
+/// that bytecode can deviate from the actual user's code as long as they behave similarly. This is
+/// also applied for operator `<=` and operator `>=`.
+///
+/// `a <= b` does not equals equivalent to `!(a > b)`, similarly with greater and greater or equal.
+/// According to [IEEE 754] all comparison operators return `false` when an operand is `NaN`. These
+/// are implementation details that we should keep in mind when making a real language.
+///
+/// [IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
+#[derive(Debug, Clone)]
+pub enum OpCode {
+    /// Pop the top of the stack
+    Pop,
+    /// Jump backward for n instructions
+    Loop(u16),
+    /// Jump forward for n instructions
+    Jump(u16),
+    /// Jump forward for n instructions if current stack top is falsey
+    JumpIfFalse(u16),
+    /// Make a function call
+    Call(u8),
+    /// Add a new closure
+    Closure(u8, Vec<Upvalue>),
+    /// Return from the current function
+    Return,
+    /// Print an expression in human readable format
+    Print,
+    /// Get a variable through its upvalue
+    GetUpvalue(u8),
+    /// Set a variable through its upvalue
+    SetUpvalue(u8),
+    /// Set the value of a global variable
+    GetLocal(u8),
+    /// Set the value of a local variable
+    SetLocal(u8),
+    /// Pop the top of the stack and define a variable initialized with that value.
+    DefineGlobal(u8),
+    /// Get the value of a global variable
+    GetGlobal(u8),
+    /// Set the value of a global variable
+    SetGlobal(u8),
+    /// Load a constant
+    Constant(u8),
+    /// Load a `nil` value
+    Nil,
+    /// Load a `true` value
+    True,
+    /// Load a `false` value
+    False,
+    /// Apply logical `not` to a single boolean operand
+    Not,
+    /// Negate a single number operand
+    Negate,
+    /// Check for equality between 2 operands.
+    Equal,
+    /// Compare if the first operand is greater than the second
+    Greater,
+    /// Compare if the first operand is less than the second
+    Less,
+    /// Add two number operands or two string operands
+    Add,
+    /// Subtract two number operands
+    Subtract,
+    /// Multiply two number operands
+    Multiply,
+    /// Divide two number operands
+    Divide,
+}
+
+fn clock_native(_args: &[Value]) -> Value {
+    let start = std::time::SystemTime::now();
+    let since_epoch = start
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Time went backwards");
+    Value::Number(since_epoch.as_secs_f64())
+}
 
 #[derive(Debug)]
 struct CallFrame {
@@ -75,7 +170,7 @@ impl VM {
                 disassemble_instruction(&self.chunk(), self.frame().ip as usize);
             }
 
-            let opcode = self.next_instruction();
+            let opcode = self.next_instruction().clone();
             match opcode {
                 OpCode::Pop => {
                     self.pop();
@@ -94,7 +189,8 @@ impl VM {
                 OpCode::Call(argc) => {
                     self.call_value(self.peek(argc as usize).clone(), argc)?;
                 }
-                OpCode::Closure(fun_idx) => {
+                OpCode::Closure(fun_idx, _upvalues) => {
+                    // TODO: upvalues implementation
                     let fun = self.chunk().read_const(fun_idx as usize);
                     match fun {
                         Value::Fun(fun) => {
@@ -121,6 +217,12 @@ impl VM {
                 OpCode::Print => {
                     let v = self.pop();
                     println!("{}", v);
+                }
+                OpCode::GetUpvalue(ref _id) => {
+                    // TODO: Get upvalue
+                }
+                OpCode::SetUpvalue(ref _id) => {
+                    // TODO: Get upvalue
                 }
                 OpCode::GetLocal(ref slot) => {
                     let local = self.stack[self.frame().slot + *slot as usize].clone();
@@ -345,11 +447,11 @@ impl VM {
         Ok(())
     }
 
-    fn next_instruction(&mut self) -> OpCode {
+    fn next_instruction(&mut self) -> &OpCode {
         let frame = self.frame_mut();
         let (opcode, _) = frame.closure.fun.chunk.read_instruction(frame.ip);
         frame.ip += 1;
-        opcode
+        &opcode
     }
 
     fn chunk(&self) -> &Chunk {
@@ -405,22 +507,4 @@ impl VM {
             }
         }
     }
-}
-
-fn clock_native(_args: &[Value]) -> Value {
-    let start = std::time::SystemTime::now();
-    let since_epoch = start
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("Time went backwards");
-    Value::Number(since_epoch.as_secs_f64())
-}
-
-#[cfg(debug_assertions)]
-fn print_stack(stack: &[Value]) {
-    // print stack trace
-    print!("          ");
-    for val in stack {
-        print!("[ {} ]", val);
-    }
-    println!();
 }

@@ -11,6 +11,8 @@ pub type StringInterner<B = DefaultBackend<StringId>, H = DefaultHashBuilder> =
 /// Interned string id
 pub type StringId = SymbolU32;
 
+// This idea was taken from
+// https://github.com/anellie/cloxrs/blob/main/src/interner.rs
 thread_local! {
     static INTERN: RefCell<StringInterner> = RefCell::new(StringInterner::with_capacity(MAX_STACK));
 }

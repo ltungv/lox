@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StringId, Token, Value,
-    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_STACK,
+    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_UPVALUES,
 };
 
 #[cfg(debug_assertions)]
@@ -106,7 +106,7 @@ pub struct Compiler<'a> {
     panic: bool,
     // Avoid having a linked list of compiler, solution found from
     // https://github.com/tdp2110/crafting-interpreters-rs/blob/trunk/src/compiler.rs
-    nestings: Vec<Nesting>,
+    levels: Vec<Level>,
 }
 
 impl<'a> Compiler<'a> {
@@ -126,7 +126,7 @@ impl<'a> Compiler<'a> {
             },
             had_error: false,
             panic: false,
-            nestings: vec![Nesting::new(ObjFun::default(), FunType::Script)],
+            levels: vec![Level::new(ObjFun::default(), FunType::Script)],
         }
     }
 
@@ -145,7 +145,7 @@ impl<'a> Compiler<'a> {
         }
         self.emit_return();
 
-        let fun = self.nestings.pop().expect("Cannot be empty").fun;
+        let fun = self.level_pop().fun;
 
         #[cfg(debug_assertions)]
         disassemble_chunk(&fun.chunk, format!("{}", fun).as_str());
@@ -154,15 +154,34 @@ impl<'a> Compiler<'a> {
     }
 
     fn chunk(&mut self) -> &mut Chunk {
-        &mut self.nest_mut().fun.chunk
+        &mut self.level_current_mut().fun.chunk
     }
 
-    fn nest(&self) -> &Nesting {
-        self.nestings.last().expect("Cannot be empty")
+    fn level_pop(&mut self) -> Level {
+        self.levels.pop().expect("Cannot be empty")
     }
 
-    fn nest_mut(&mut self) -> &mut Nesting {
-        self.nestings.last_mut().expect("Cannot be empty")
+    fn level(&self, lvl: usize) -> &Level {
+        // last item contains the chunk that is currently written to
+        // level 0 --> current
+        // level 1 --> enclosing
+        // level 2 --> enlosing of enclosing
+        // level 3 --> so on...
+        let idx = self.levels.len() - lvl - 1;
+        &self.levels[idx]
+    }
+
+    fn level_mut(&mut self, lvl: usize) -> &mut Level {
+        let idx = self.levels.len() - lvl - 1;
+        &mut self.levels[idx]
+    }
+
+    fn level_current(&self) -> &Level {
+        self.level(0)
+    }
+
+    fn level_current_mut(&mut self) -> &mut Level {
+        self.level_mut(0)
     }
 
     fn make_const(&mut self, v: Value) -> u8 {
@@ -231,7 +250,7 @@ impl<'a> Compiler<'a> {
 
     fn function(&mut self, fun_t: FunType) {
         let name = intern::id(self.previous_token.lexeme);
-        self.nestings.push(Nesting::new(
+        self.levels.push(Level::new(
             ObjFun {
                 name,
                 arity: 0,
@@ -244,11 +263,11 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::LParen, "Expect '(' after function name");
         if !self.check(token::Type::RParen) {
             loop {
-                if self.nest_mut().fun.arity as usize == MAX_PARAMS {
+                if self.level_current_mut().fun.arity as usize == MAX_PARAMS {
                     self.error_current("Can't have more than 255 parameters");
                 }
 
-                self.nest_mut().fun.arity += 1;
+                self.level_current_mut().fun.arity += 1;
                 let ident_id = self.parse_variable();
                 self.define_variable(ident_id);
 
@@ -261,11 +280,14 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::LBrace, "Expect '{' before function body");
         self.block();
 
-        if let Some(fun) = self.finish() {
-            let fun = Rc::new(fun);
-            let const_id = self.make_const(Value::Fun(fun));
-            self.emit(OpCode::Closure(const_id));
-        }
+        self.emit_return();
+        let level = self.level_pop();
+        let fun = level.fun;
+        let upvalues = level.upvalues;
+
+        let fun = Rc::new(fun);
+        let const_id = self.make_const(Value::Fun(fun));
+        self.emit(OpCode::Closure(const_id, upvalues));
     }
 
     fn var_declaration(&mut self) {
@@ -291,7 +313,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self) -> u8 {
-        if self.nest().scope_depth > 0 {
+        if self.level_current().scope_depth > 0 {
             0 // A dummy value used when we're not in the global scope
         } else {
             let name = intern::id(self.previous_token.lexeme);
@@ -300,17 +322,17 @@ impl<'a> Compiler<'a> {
     }
 
     fn declare_variable(&mut self) {
-        if self.nest().scope_depth == 0 {
+        if self.level_current().scope_depth == 0 {
             return;
         }
-        if self.nest().locals.len() == MAX_LOCAL_VARIABLES {
+        if self.level_current().locals.len() == MAX_LOCAL_VARIABLES {
             self.error("Too many local variables in function");
         }
 
         let name = intern::id(self.previous_token.lexeme);
         let mut name_duplicated = false;
-        for l in self.nest().locals.iter() {
-            if l.initialized && l.depth < self.nest().scope_depth {
+        for l in self.level_current().locals.iter() {
+            if l.initialized && l.depth < self.level_current().scope_depth {
                 break;
             }
             if l.name == name {
@@ -322,14 +344,16 @@ impl<'a> Compiler<'a> {
             self.error("Already a variable with this name in this scope");
         }
 
-        let scope_depth = self.nest().scope_depth;
-        self.nest_mut().locals.push((name, scope_depth).into());
+        let scope_depth = self.level_current().scope_depth;
+        self.level_current_mut()
+            .locals
+            .push((name, scope_depth).into());
     }
 
     fn define_variable(&mut self, ident_id: u8) {
         // Local variables are not looked up by name. There's no need to stuff
         // the variable name into the constant table.
-        if self.nest().scope_depth > 0 {
+        if self.level_current().scope_depth > 0 {
             self.mark_initialized();
         } else {
             self.emit(OpCode::DefineGlobal(ident_id));
@@ -337,10 +361,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn mark_initialized(&mut self) {
-        if self.nest().scope_depth == 0 {
+        if self.level_current().scope_depth == 0 {
             return;
         }
-        self.nest_mut()
+        self.level_current_mut()
             .locals
             .last_mut()
             .expect("Just pushed")
@@ -375,22 +399,22 @@ impl<'a> Compiler<'a> {
     }
 
     fn begin_scope(&mut self) {
-        self.nest_mut().scope_depth += 1;
+        self.level_current_mut().scope_depth += 1;
     }
 
     fn end_scope(&mut self) {
-        self.nest_mut().scope_depth -= 1;
-        while let Some(l) = self.nest().locals.last() {
-            if l.depth <= self.nest().scope_depth {
+        self.level_current_mut().scope_depth -= 1;
+        while let Some(l) = self.level_current().locals.last() {
+            if l.depth <= self.level_current().scope_depth {
                 break;
             }
             self.emit(OpCode::Pop);
-            self.nest_mut().locals.pop();
+            self.level_current_mut().locals.pop();
         }
     }
 
     fn return_statement(&mut self) {
-        if self.nest().fun_t == FunType::Script {
+        if self.level_current().fun_t == FunType::Script {
             self.error("Can't return from top-level code")
         }
 
@@ -608,14 +632,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn variable(&mut self, can_assign: bool) {
-        let (op_get, op_set) =
-            if let Some(local) = self.resolve_local(intern::id(self.previous_token.lexeme)) {
-                (OpCode::GetLocal(local), OpCode::SetLocal(local))
-            } else {
-                let name = intern::id(self.previous_token.lexeme);
-                let ident_id = self.make_const(Value::String(name));
-                (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
-            };
+        let var_name = intern::id(self.previous_token.lexeme);
+        let (op_get, op_set) = if let Some(local) = self.resolve_local(0, var_name) {
+            (OpCode::GetLocal(local), OpCode::SetLocal(local))
+        } else if let Some(upval) = self.resolve_upvalue(0, var_name) {
+            (OpCode::GetUpvalue(upval), OpCode::SetUpvalue(upval))
+        } else {
+            let ident_id = self.make_const(Value::String(var_name));
+            (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
+        };
 
         if can_assign && self.match_type(token::Type::Equal) {
             self.expression();
@@ -625,8 +650,8 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn resolve_local(&mut self, name: StringId) -> Option<u8> {
-        self.nest()
+    fn resolve_local(&mut self, level: usize, name: StringId) -> Option<u8> {
+        self.level(level)
             .locals
             .iter()
             .enumerate()
@@ -639,6 +664,39 @@ impl<'a> Compiler<'a> {
                 }
                 i
             })
+    }
+
+    fn add_upvalue(&mut self, level: usize, index: u8, is_local: bool) -> usize {
+        let level = self.level_mut(level);
+        let upvalue_count = level.upvalues.len();
+        // reuse upvalue if a variable is referenced multiple times
+        for (i, upvalue) in level.upvalues.iter().enumerate() {
+            if upvalue.index == index && upvalue.is_local == is_local {
+                return i;
+            }
+        }
+        if upvalue_count == MAX_UPVALUES {
+            self.error("Too many closure variables in function");
+            return 0;
+        }
+        level.upvalues.push(Upvalue {
+            index, // closed-over local variable's slot index
+            is_local,
+        });
+        upvalue_count
+    }
+
+    fn resolve_upvalue(&mut self, level: usize, name: StringId) -> Option<u8> {
+        if self.levels.len() - 1 == level {
+            return None;
+        }
+        if let Some(local) = self.resolve_local(level + 1, name) {
+            return Some(self.add_upvalue(level, local, true) as u8);
+        }
+        if let Some(upvalue) = self.resolve_upvalue(level + 1, name) {
+            return Some(self.add_upvalue(level, upvalue, false) as u8);
+        }
+        None
     }
 
     fn string(&mut self) {
@@ -802,17 +860,18 @@ impl<'a> Compiler<'a> {
 }
 
 #[derive(Debug)]
-struct Nesting {
+struct Level {
     fun: ObjFun,
     fun_t: FunType,
     locals: Vec<Local>,
+    upvalues: Vec<Upvalue>,
     scope_depth: usize,
 }
 
-impl Nesting {
+impl Level {
     fn new(fun: ObjFun, fun_t: FunType) -> Self {
         // The first slot on the stack is reserved for the callframe
-        let mut locals = Vec::with_capacity(MAX_STACK);
+        let mut locals = Vec::with_capacity(MAX_LOCAL_VARIABLES);
         locals.push(Local {
             name: intern::id(""),
             depth: 0,
@@ -822,9 +881,22 @@ impl Nesting {
             fun,
             fun_t,
             locals,
+            upvalues: Vec::with_capacity(MAX_UPVALUES),
             scope_depth: 0,
         }
     }
+}
+
+/// An upvalue refers to a local variable in an enclosing function. Every closure
+/// maintains an array of upvalues, one for each surrounding local variables that
+/// the clossure uses.
+#[derive(Debug, Clone)]
+pub struct Upvalue {
+    /// The local slot that this upvalue is capturing
+    pub index: u8,
+    /// True if this upvalue refers the a local variable in the enclosing function.
+    /// Otherwise, the upvalue is referring to another upvalue in the enclosing function.
+    pub is_local: bool,
 }
 
 /// Store name and depth of the resolved identifer.

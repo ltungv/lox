@@ -1,208 +1,4 @@
-
-use std::{fmt, rc::Rc};
-
-use crate::{intern, Position, StringId};
-
-/// OpCode is a number that specifies the type of the instruction.
-///
-/// # Notes
-///
-/// If it was for performances purposes, the following options could be considered:
-/// + Having the opcode designed to be as close as possbible to existing lower-level instructions
-/// + Having specialized opcode for constant
-///
-/// We don't have a `OpCode::NotEqual` because we will transform `a != b` to `!(a == b)` to demonstrated
-/// that bytecode can deviate from the actual user's code as long as they behave similarly. This is
-/// also applied for operator `<=` and operator `>=`.
-///
-/// `a <= b` does not equals equivalent to `!(a > b)`, similarly with greater and greater or equal.
-/// According to [IEEE 754] all comparison operators return `false` when an operand is `NaN`. These
-/// are implementation details that we should keep in mind when making a real language.
-///
-/// [IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
-#[derive(Debug, Clone, Copy)]
-pub enum OpCode {
-    /// Pop the top of the stack
-    Pop,
-    /// Jump backward for n instructions
-    Loop(u16),
-    /// Jump forward for n instructions
-    Jump(u16),
-    /// Jump forward for n instructions if current stack top is falsey
-    JumpIfFalse(u16),
-    /// Make a function call
-    Call(u8),
-    /// Add a new closure
-    Closure(u8),
-    /// Return from the current function
-    Return,
-    /// Print an expression in human readable format
-    Print,
-    /// Set the value of a global variable
-    GetLocal(u8),
-    /// Set the value of a local variable
-    SetLocal(u8),
-    /// Pop the top of the stack and define a variable initialized with that value.
-    DefineGlobal(u8),
-    /// Get the value of a global variable
-    GetGlobal(u8),
-    /// Set the value of a global variable
-    SetGlobal(u8),
-    /// Load a constant
-    Constant(u8),
-    /// Load a `nil` value
-    Nil,
-    /// Load a `true` value
-    True,
-    /// Load a `false` value
-    False,
-    /// Apply logical `not` to a single boolean operand
-    Not,
-    /// Negate a single number operand
-    Negate,
-    /// Check for equality between 2 operands.
-    Equal,
-    /// Compare if the first operand is greater than the second
-    Greater,
-    /// Compare if the first operand is less than the second
-    Less,
-    /// Add two number operands or two string operands
-    Add,
-    /// Subtract two number operands
-    Subtract,
-    /// Multiply two number operands
-    Multiply,
-    /// Divide two number operands
-    Divide,
-}
-
-/// This represents a Lox type and its data at.
-#[derive(Debug, Clone)]
-pub enum Value {
-    /// A nothing value in Lox
-    Nil,
-    /// A boolean value in Lox
-    Bool(bool),
-    /// A number value in Lox
-    Number(f64),
-    /// A heap allocated string
-    ///
-    /// # Notes
-    ///
-    /// To improve memory usage, we should separated string into 2 types, one that owns its
-    /// character array and one that is "constant" such that it points to the original source
-    /// or some non-freeable location.
-    String(StringId),
-    /// A native function object
-    NativeFun(ObjNativeFun),
-    /// A function object
-    Closure(Rc<ObjClosure>),
-    /// A function object
-    Fun(Rc<ObjFun>),
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        match self {
-            Self::Nil => write!(f, "nil"),
-            Self::Bool(b) => write!(f, "{}", b),
-            Self::Number(n) => {
-                if n.trunc().eq(n) {
-                    write!(f, "{:.0?}", n)
-                } else {
-                    write!(f, "{:?}", n)
-                }
-            }
-            Self::String(id) => write!(f, "{}", intern::str(*id)),
-            Self::Closure(c) => write!(f, "{}", c.fun),
-            Self::Fun(obj) => write!(f, "{}", obj),
-            Self::NativeFun(n) => write!(f, "{}", n),
-        }
-    }
-}
-
-impl Value {
-    /// Return true if the value is `nil` or `false`. Otherwise, return false.
-    pub fn is_falsey(&self) -> bool {
-        match self {
-            Self::Bool(b) => !b,
-            Self::Nil => true,
-            _ => false,
-        }
-    }
-
-    /// Check for equality between two values of the same type. If the operands are of different
-    /// types, return `false`.
-    pub fn equal(&self, other: &Value) -> bool {
-        match (self, other) {
-            (Self::Nil, Self::Nil) => true,
-            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
-            (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
-            (Self::String(s1), Self::String(s2)) => s1 == s2,
-            _ => false,
-        }
-    }
-}
-
-/// A function that capter its surrounding environemnt,
-#[derive(Debug)]
-pub struct ObjClosure {
-    /// The base function of this closure
-    pub fun: Rc<ObjFun>,
-}
-
-/// A function object that holds the bytecode of the function along with other metadata
-#[derive(Debug)]
-pub struct ObjFun {
-    /// The name of the function
-    pub name: StringId,
-    /// Number of parameters the function has
-    pub arity: u8,
-    /// The bytecode chunk of this function
-    pub chunk: Chunk,
-}
-
-impl fmt::Display for ObjFun {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let name_str = intern::str(self.name);
-        if name_str.is_empty() {
-            write!(f, "<script>")
-        } else {
-            write!(f, "<fn {}>", name_str)
-        }
-    }
-}
-
-impl Default for ObjFun {
-    fn default() -> Self {
-        Self {
-            name: intern::id(""),
-            arity: 0,
-            chunk: Chunk::default(),
-        }
-    }
-}
-
-/// A native function
-#[derive(Clone)]
-pub struct ObjNativeFun {
-    /// Number of parameters
-    pub arity: u8,
-    /// Native function reference
-    pub call: fn(&[Value]) -> Value,
-}
-
-impl fmt::Display for ObjNativeFun {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "<native fn>")
-    }
-}
-
-impl fmt::Debug for ObjNativeFun {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "<native fn>")
-    }
-}
+use crate::{Position,OpCode,Value};
 
 /// A chunk holds a sequence of instructions to be executes and their data
 ///
@@ -234,8 +30,8 @@ impl Chunk {
     }
 
     /// Read the instruction at the index.
-    pub fn read_instruction(&self, idx: usize) -> (OpCode, Position) {
-        (self.instructions[idx], self.positions[idx])
+    pub fn read_instruction(&self, idx: usize) -> (&OpCode, &Position) {
+        (&self.instructions[idx], &self.positions[idx])
     }
 
     /// Return the index of the last written instruction.
@@ -313,13 +109,23 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", idx, *offset, false),
         OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, true),
         OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, true),
-        OpCode::Call(_) => println!("OP_CALL"),
-        OpCode::Closure(idx) => {
+        OpCode::Call(ref idx) => byte_instruction("OP_CALL", *idx),
+        OpCode::Closure(ref constant, ref upvalues) => {
             let value = chunk.read_const(idx as usize);
-            println!("{:-16} {:4} {}", "OP_CLOSURE", idx, value,);
+            println!("{:-16} {:4} {}", "OP_CLOSURE", constant, value);
+            for upvalue in upvalues {
+                println!(
+                    "{:04}      |                     {} {}",
+                    idx,
+                    if upvalue.is_local { "local" } else { "upvalue" },
+                    upvalue.index,
+                )
+            }
         }
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Print => println!("OP_PRINT"),
+        OpCode::GetUpvalue(ref idx) => byte_instruction("OP_GET_UPVALUE", *idx),
+        OpCode::SetUpvalue(ref idx) => byte_instruction("OP_SET_UPVALUE", *idx),
         OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
         OpCode::SetLocal(ref slot) => byte_instruction("OP_SET_LOCAL", *slot),
         OpCode::DefineGlobal(ref const_id) => constant_instruction("OP_DEFINE_GLOBAL", *const_id),
