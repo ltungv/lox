@@ -1,3 +1,4 @@
+
 use std::{fmt, rc::Rc};
 
 use crate::{intern, Position, StringId};
@@ -31,6 +32,8 @@ pub enum OpCode {
     JumpIfFalse(u16),
     /// Make a function call
     Call(u8),
+    /// Add a new closure
+    Closure(u8),
     /// Return from the current function
     Return,
     /// Print an expression in human readable format
@@ -91,9 +94,11 @@ pub enum Value {
     /// or some non-freeable location.
     String(StringId),
     /// A function object
+    Closure(Rc<ObjClosure>),
+    /// A function object
     Fun(Rc<ObjFun>),
     /// A native function object
-    NativeFun(ObjNativeFun),
+    NativeFun(Rc<ObjNativeFun>),
 }
 
 impl fmt::Display for Value {
@@ -109,6 +114,7 @@ impl fmt::Display for Value {
                 }
             }
             Self::String(id) => write!(f, "{}", intern::str(*id)),
+            Self::Closure(c) => write!(f, "{}", c.fun),
             Self::Fun(obj) => write!(f, "{}", obj),
             Self::NativeFun(n) => write!(f, "{}", n),
         }
@@ -136,6 +142,13 @@ impl Value {
             _ => false,
         }
     }
+}
+
+/// A function that capter its surrounding environemnt,
+#[derive(Debug)]
+pub struct ObjClosure {
+    /// The base function of this closure
+    pub fun: Rc<ObjFun>,
 }
 
 /// A function object that holds the bytecode of the function along with other metadata
@@ -301,6 +314,10 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, true),
         OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, true),
         OpCode::Call(_) => println!("OP_CALL"),
+        OpCode::Closure(idx) => {
+            let value = chunk.read_const(idx as usize);
+            println!("{:-16} {:4} {}", "OP_CLOSURE", idx, value,);
+        }
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Print => println!("OP_PRINT"),
         OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),

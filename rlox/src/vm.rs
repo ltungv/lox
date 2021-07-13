@@ -1,8 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, ObjFun, ObjNativeFun, OpCode, RuntimeError, StringId, Value,
-    MAX_FRAMES, MAX_STACK,
+    intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, OpCode, RuntimeError, StringId,
+    Value, MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
@@ -10,7 +10,7 @@ use crate::disassemble_instruction;
 
 #[derive(Debug)]
 struct CallFrame {
-    fun: Rc<ObjFun>,
+    closure: Rc<ObjClosure>,
     ip: usize,
     slot: usize,
 }
@@ -46,8 +46,16 @@ impl VM {
         let fun = Rc::new(fun);
 
         || -> Result<(), RuntimeError> {
-            self.stack.push(Value::Fun(Rc::clone(&fun)));
-            self.call(fun, 0)?;
+            // NOTE: we push to function only to pop it immediately
+            // to accomodate the GC in later chapters
+            self.push(Value::Fun(Rc::clone(&fun)))?;
+            let closure = Rc::new(ObjClosure {
+                fun: Rc::clone(&fun),
+            });
+            self.pop();
+            self.push(Value::Closure(Rc::clone(&closure)))?;
+
+            self.call(closure, 0)?;
             self.run()
         }()
         .map_err(|err| {
@@ -85,6 +93,18 @@ impl VM {
                 }
                 OpCode::Call(argc) => {
                     self.call_value(self.peek(argc as usize).clone(), argc)?;
+                }
+                OpCode::Closure(fun_idx) => {
+                    let fun = self.chunk().read_const(fun_idx as usize);
+                    match fun {
+                        Value::Fun(fun) => {
+                            let closure = Rc::new(ObjClosure {
+                                fun: Rc::clone(fun),
+                            });
+                            self.push(Value::Closure(closure))?;
+                        }
+                        _ => unreachable!("Value must be a function object"),
+                    }
                 }
                 OpCode::Return => {
                     let val = self.pop();
@@ -261,7 +281,7 @@ impl VM {
 
     fn call_value(&mut self, callee: Value, argc: u8) -> Result<(), RuntimeError> {
         match callee {
-            Value::Fun(f) => self.call(f, argc),
+            Value::Closure(c) => self.call(c, argc),
             Value::NativeFun(f) => self.call_native(f, argc),
             _ => Err(RuntimeError::InvalidCall(
                 "Can only call functions and classes".to_string(),
@@ -269,11 +289,11 @@ impl VM {
         }
     }
 
-    fn call(&mut self, fun: Rc<ObjFun>, argc: u8) -> Result<(), RuntimeError> {
-        if argc != fun.arity {
+    fn call(&mut self, closure: Rc<ObjClosure>, argc: u8) -> Result<(), RuntimeError> {
+        if argc != closure.fun.arity {
             return Err(RuntimeError::InvalidCall(format!(
                 "Expected {} arguments but got {}",
-                fun.arity, argc
+                closure.fun.arity, argc
             )));
         }
 
@@ -282,7 +302,7 @@ impl VM {
         }
 
         let frame = CallFrame {
-            fun,
+            closure,
             ip: 0,
             slot: self.stack.len() - argc as usize - 1,
         };
@@ -290,7 +310,7 @@ impl VM {
         Ok(())
     }
 
-    fn call_native(&mut self, fun: ObjNativeFun, argc: u8) -> Result<(), RuntimeError> {
+    fn call_native(&mut self, fun: Rc<ObjNativeFun>, argc: u8) -> Result<(), RuntimeError> {
         if argc != fun.arity {
             return Err(RuntimeError::InvalidCall(format!(
                 "Expected {} arguments but got {}",
@@ -313,8 +333,10 @@ impl VM {
         arity: u8,
         call: fn(&[Value]) -> Value,
     ) -> Result<(), RuntimeError> {
+        // NOTE: we push to function only to pop it immediately
+        // to accomodate the GC in later chapters
         self.push(Value::String(intern::id(name)))?;
-        self.push(Value::NativeFun(ObjNativeFun { arity, call }))?;
+        self.push(Value::NativeFun(Rc::new(ObjNativeFun { arity, call })))?;
         if let Value::String(name) = self.stack[0] {
             self.globals.insert(name, self.stack[1].clone());
         }
@@ -325,13 +347,13 @@ impl VM {
 
     fn next_instruction(&mut self) -> OpCode {
         let frame = self.frame_mut();
-        let (opcode, _) = frame.fun.chunk.read_instruction(frame.ip);
+        let (opcode, _) = frame.closure.fun.chunk.read_instruction(frame.ip);
         frame.ip += 1;
         opcode
     }
 
     fn chunk(&self) -> &Chunk {
-        &self.frame().fun.chunk
+        &self.frame().closure.fun.chunk
     }
 
     fn frame(&self) -> &CallFrame {
@@ -374,8 +396,8 @@ impl VM {
     /// Print out where execution stop right before the error
     fn print_stack_trace(&self) {
         for frame in self.frames.iter().rev() {
-            let (_, pos) = frame.fun.chunk.read_instruction(frame.ip - 1);
-            let fname = intern::str(frame.fun.name);
+            let (_, pos) = frame.closure.fun.chunk.read_instruction(frame.ip - 1);
+            let fname = intern::str(frame.closure.fun.name);
             if fname.is_empty() {
                 eprintln!("{} in script.", pos);
             } else {

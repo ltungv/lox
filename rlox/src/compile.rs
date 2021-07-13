@@ -264,7 +264,7 @@ impl<'a> Compiler<'a> {
         if let Some(fun) = self.finish() {
             let fun = Rc::new(fun);
             let const_id = self.make_const(Value::Fun(fun));
-            self.emit(OpCode::Constant(const_id));
+            self.emit(OpCode::Closure(const_id));
         }
     }
 
