@@ -1,20 +1,12 @@
 use std::rc::Rc;
 
 use crate::{
-    intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StringId, Token, Value, MAX_STACK,
+    intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StringId, Token, Value,
+    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
 use crate::disassemble_chunk;
-
-/// Maximum number of parameters a function can take
-pub const MAX_PARAMS: usize = 255;
-
-/// Maximum number of parameters a function can take
-pub const MAX_LOCAL_VARIABLES: usize = 256;
-
-/// Maximum number of parameters a function can take
-pub const MAX_CHUNK_CONSTANTS: usize = 256;
 
 /// Function object's type.
 ///
@@ -156,10 +148,7 @@ impl<'a> Compiler<'a> {
         let fun = self.nestings.pop().expect("Cannot be empty").fun;
 
         #[cfg(debug_assertions)]
-        disassemble_chunk(
-            &fun.chunk,
-            format!("{}", fun).as_str(),
-        );
+        disassemble_chunk(&fun.chunk, format!("{}", fun).as_str());
 
         Some(fun)
     }

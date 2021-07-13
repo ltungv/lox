@@ -18,3 +18,18 @@ pub use intern::*;
 pub use scan::*;
 pub use token::*;
 pub use vm::*;
+
+/// We're limiting the frames's size to be in specification with clox
+pub const MAX_FRAMES: usize = 64;
+
+/// We're limiting the stack's size to be in specification with clox
+pub const MAX_STACK: usize = u8::MAX as usize * MAX_FRAMES;
+
+/// Maximum number of parameters a function can take, this is u8::MAX - 1 so "this" can be accomodated in bound function
+pub const MAX_PARAMS: usize = 255;
+
+/// Maximum number of parameters a function can take
+pub const MAX_LOCAL_VARIABLES: usize = 256;
+
+/// Maximum number of parameters a function can take
+pub const MAX_CHUNK_CONSTANTS: usize = 256;

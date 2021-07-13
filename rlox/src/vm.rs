@@ -2,16 +2,11 @@ use std::{collections::HashMap, rc::Rc};
 
 use crate::{
     intern, Chunk, Compiler, Error, ObjFun, ObjNativeFun, OpCode, RuntimeError, StringId, Value,
+    MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
 use crate::disassemble_instruction;
-
-/// We're limiting the frames's size to be in specification with clox
-pub const MAX_FRAMES: usize = 64;
-
-/// We're limiting the stack's size to be in specification with clox
-pub const MAX_STACK: usize = u8::MAX as usize * MAX_FRAMES;
 
 #[derive(Debug)]
 struct CallFrame {
