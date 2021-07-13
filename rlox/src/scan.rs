@@ -89,8 +89,8 @@ impl<'s> Scanner<'s> {
             '"' => self.string()?,
             n if is_digit(n) => self.number(),
             c if is_alpha(c) => self.identity(),
-            c => {
-                return Err(ScanError::UnexpectedCharacter(self.pos, c));
+            _ => {
+                return Err(ScanError::UnexpectedCharacter(self.pos));
             }
         })
     }

@@ -152,12 +152,16 @@ impl<'a> Compiler<'a> {
             return None;
         }
         self.emit_return();
+
+        let fun = self.nestings.pop().expect("Cannot be empty").fun;
+
         #[cfg(debug_assertions)]
         disassemble_chunk(
-            &self.nest().fun.chunk,
-            format!("{}", self.nest().fun).as_str(),
+            &fun.chunk,
+            format!("{}", fun).as_str(),
         );
-        Some(self.nestings.pop().expect("Cannot be empty").fun)
+
+        Some(fun)
     }
 
     fn chunk(&mut self) -> &mut Chunk {
@@ -602,7 +606,7 @@ impl<'a> Compiler<'a> {
                 self.expression();
                 if arg_count == MAX_PARAMS {
                     self.error("Can't have more than 255 arguments");
-                    return MAX_PARAMS as u8;
+                    break;
                 }
                 arg_count += 1;
                 if !self.match_type(token::Type::Comma) {
@@ -752,6 +756,7 @@ impl<'a> Compiler<'a> {
                 Err(err) => {
                     eprintln!("{}", err);
                     self.had_error = true;
+                    self.panic = true;
                 }
                 Ok(tok) => {
                     self.previous_token = std::mem::replace(&mut self.current_token, tok);
@@ -761,15 +766,8 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn check(&mut self, typ: token::Type) -> bool {
-        if self.current_token.typ != typ {
-            return false;
-        }
-        true
-    }
-
     fn match_type(&mut self, typ: token::Type) -> bool {
-        if self.current_token.typ != typ {
+        if !self.check(typ) {
             return false;
         }
         self.advance();
@@ -777,11 +775,18 @@ impl<'a> Compiler<'a> {
     }
 
     fn consume(&mut self, typ: token::Type, msg: &'static str) {
-        if self.current_token.typ != typ {
+        if !self.check(typ) {
             self.error_current(msg);
             return;
         }
         self.advance();
+    }
+
+    fn check(&mut self, typ: token::Type) -> bool {
+        if self.current_token.typ != typ {
+            return false;
+        }
+        true
     }
 
     fn error(&mut self, message: &'static str) {

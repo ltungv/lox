@@ -30,7 +30,7 @@ pub enum ScanError {
     /// A string literal is unterminated
     UnterminatedString(Position),
     /// Invalid character
-    UnexpectedCharacter(Position, char),
+    UnexpectedCharacter(Position),
 }
 
 impl std::error::Error for Error {}
@@ -68,8 +68,8 @@ impl fmt::Display for ScanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnterminatedString(ref pos) => write!(f, "{} Error: Unterminated string.", pos),
-            Self::UnexpectedCharacter(ref pos, ref c) => {
-                write!(f, "{} Error: Unexpected character '{}'.", pos, c)
+            Self::UnexpectedCharacter(ref pos) => {
+                write!(f, "{} Error: Unexpected character.", pos)
             }
         }
     }
