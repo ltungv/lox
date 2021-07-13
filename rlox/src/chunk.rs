@@ -93,12 +93,12 @@ pub enum Value {
     /// character array and one that is "constant" such that it points to the original source
     /// or some non-freeable location.
     String(StringId),
+    /// A native function object
+    NativeFun(ObjNativeFun),
     /// A function object
     Closure(Rc<ObjClosure>),
     /// A function object
     Fun(Rc<ObjFun>),
-    /// A native function object
-    NativeFun(Rc<ObjNativeFun>),
 }
 
 impl fmt::Display for Value {

@@ -310,7 +310,7 @@ impl VM {
         Ok(())
     }
 
-    fn call_native(&mut self, fun: Rc<ObjNativeFun>, argc: u8) -> Result<(), RuntimeError> {
+    fn call_native(&mut self, fun: ObjNativeFun, argc: u8) -> Result<(), RuntimeError> {
         if argc != fun.arity {
             return Err(RuntimeError::InvalidCall(format!(
                 "Expected {} arguments but got {}",
@@ -336,7 +336,7 @@ impl VM {
         // NOTE: we push to function only to pop it immediately
         // to accomodate the GC in later chapters
         self.push(Value::String(intern::id(name)))?;
-        self.push(Value::NativeFun(Rc::new(ObjNativeFun { arity, call })))?;
+        self.push(Value::NativeFun(ObjNativeFun { arity, call }))?;
         if let Value::String(name) = self.stack[0] {
             self.globals.insert(name, self.stack[1].clone());
         }
