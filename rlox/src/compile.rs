@@ -141,7 +141,7 @@ impl<'a> Compiler<'a> {
     /// Starts building the bytecode chunk
     pub fn compile(&mut self) {
         self.advance();
-        while self.current_token.typ != token::Type::Eof {
+        while !self.check(token::Type::Eof) {
             self.declaration();
         }
     }
@@ -174,7 +174,7 @@ impl<'a> Compiler<'a> {
 
     fn make_const(&mut self, v: Value) -> u8 {
         if self.chunk().const_count() == MAX_CHUNK_CONSTANTS {
-            self.error_previous("Too many constants in one chunk");
+            self.error("Too many constants in one chunk");
             return MAX_CHUNK_CONSTANTS as u8;
         }
         let const_id = self.chunk().write_const(v);
@@ -209,16 +209,16 @@ impl<'a> Compiler<'a> {
         // +1 because the offset also takes into account the newly emitted loop opcode
         let offset = self.chunk().instructions_count() - loop_start + 1;
         if offset > u16::MAX as usize {
-            self.error_previous("Loop body too large");
+            self.error("Loop body too large");
             return;
         }
         self.emit(OpCode::Loop(offset as u16));
     }
 
     fn declaration(&mut self) {
-        if self.advance_if(token::Type::Fun) {
+        if self.match_type(token::Type::Fun) {
             self.fun_declaration()
-        } else if self.advance_if(token::Type::Var) {
+        } else if self.match_type(token::Type::Var) {
             self.var_declaration()
         } else {
             self.statement()
@@ -249,7 +249,7 @@ impl<'a> Compiler<'a> {
         self.begin_scope();
 
         self.consume(token::Type::LParen, "Expect '(' after function name");
-        if self.current_token.typ != token::Type::RParen {
+        if !self.check(token::Type::RParen) {
             loop {
                 if self.nest_mut().fun.arity as usize == MAX_PARAMS {
                     self.error_current("Can't have more than 255 parameters");
@@ -259,7 +259,7 @@ impl<'a> Compiler<'a> {
                 let ident_id = self.parse_variable();
                 self.define_variable(ident_id);
 
-                if !self.advance_if(token::Type::Comma) {
+                if !self.match_type(token::Type::Comma) {
                     break;
                 }
             }
@@ -278,7 +278,7 @@ impl<'a> Compiler<'a> {
     fn var_declaration(&mut self) {
         let ident_id = self.parse_variable();
         // initializer
-        if self.advance_if(token::Type::Equal) {
+        if self.match_type(token::Type::Equal) {
             self.expression();
         } else {
             self.emit(OpCode::Nil);
@@ -311,7 +311,7 @@ impl<'a> Compiler<'a> {
             return;
         }
         if self.nest().locals.len() == MAX_LOCAL_VARIABLES {
-            self.error_previous("Too many local variables in function");
+            self.error("Too many local variables in function");
         }
 
         let name = intern::id(self.previous_token.lexeme);
@@ -326,7 +326,7 @@ impl<'a> Compiler<'a> {
             }
         }
         if name_duplicated {
-            self.error_previous("Already a variable with this name in this scope");
+            self.error("Already a variable with this name in this scope");
         }
 
         let scope_depth = self.nest().scope_depth;
@@ -355,17 +355,17 @@ impl<'a> Compiler<'a> {
     }
 
     fn statement(&mut self) {
-        if self.advance_if(token::Type::Print) {
+        if self.match_type(token::Type::Print) {
             self.print_statement();
-        } else if self.advance_if(token::Type::For) {
+        } else if self.match_type(token::Type::For) {
             self.for_statement();
-        } else if self.advance_if(token::Type::If) {
+        } else if self.match_type(token::Type::If) {
             self.if_statement();
-        } else if self.advance_if(token::Type::Return) {
+        } else if self.match_type(token::Type::Return) {
             self.return_statement();
-        } else if self.advance_if(token::Type::While) {
+        } else if self.match_type(token::Type::While) {
             self.while_statement();
-        } else if self.advance_if(token::Type::LBrace) {
+        } else if self.match_type(token::Type::LBrace) {
             self.begin_scope();
             self.block();
             self.end_scope();
@@ -375,9 +375,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn block(&mut self) {
-        while self.current_token.typ != token::Type::RBrace
-            && self.current_token.typ != token::Type::Eof
-        {
+        while !self.check(token::Type::RBrace) && !self.check(token::Type::Eof) {
             self.declaration();
         }
         self.consume(token::Type::RBrace, "Expect '}' after block");
@@ -400,10 +398,10 @@ impl<'a> Compiler<'a> {
 
     fn return_statement(&mut self) {
         if self.nest().fun_t == FunType::Script {
-            self.error_previous("Can't return from top-level code")
+            self.error("Can't return from top-level code")
         }
 
-        if self.advance_if(token::Type::Semicolon) {
+        if self.match_type(token::Type::Semicolon) {
             self.emit_return();
         } else {
             self.expression();
@@ -430,7 +428,7 @@ impl<'a> Compiler<'a> {
         // Here we pop the false value.
         self.emit(OpCode::Pop);
 
-        if self.advance_if(token::Type::Else) {
+        if self.match_type(token::Type::Else) {
             self.statement();
         }
         self.patch_jump(else_jump);
@@ -456,9 +454,9 @@ impl<'a> Compiler<'a> {
         self.begin_scope();
         self.consume(token::Type::LParen, "Expect '(' after 'for'");
         // initializer clause
-        if self.advance_if(token::Type::Semicolon) {
+        if self.match_type(token::Type::Semicolon) {
             // no initializer
-        } else if self.advance_if(token::Type::Var) {
+        } else if self.match_type(token::Type::Var) {
             self.var_declaration();
         } else {
             self.expression_statement();
@@ -467,7 +465,7 @@ impl<'a> Compiler<'a> {
         let mut loop_start = self.chunk().instructions_count();
 
         // conditional clause
-        let exit_jump = if !self.advance_if(token::Type::Semicolon) {
+        let exit_jump = if !self.match_type(token::Type::Semicolon) {
             // conditional expression
             self.expression();
             self.consume(token::Type::Semicolon, "Expect ';' after loop condition");
@@ -481,7 +479,7 @@ impl<'a> Compiler<'a> {
         };
 
         // increment clause
-        if !self.advance_if(token::Type::RParen) {
+        if !self.match_type(token::Type::RParen) {
             // immediately jump to the loop's body, skipping the increment expression
             let body_jump = self.emit_jump(OpCode::Jump);
             let increment_start = self.chunk().instructions_count();
@@ -599,15 +597,15 @@ impl<'a> Compiler<'a> {
 
     fn argument_list(&mut self) -> u8 {
         let mut arg_count = 0;
-        if self.current_token.typ != token::Type::RParen {
+        if !self.check(token::Type::RParen) {
             loop {
                 self.expression();
                 if arg_count == MAX_PARAMS {
-                    self.error_previous("Can't have more than 255 arguments");
+                    self.error("Can't have more than 255 arguments");
                     return MAX_PARAMS as u8;
                 }
                 arg_count += 1;
-                if !self.advance_if(token::Type::Comma) {
+                if !self.match_type(token::Type::Comma) {
                     break;
                 }
             }
@@ -626,7 +624,7 @@ impl<'a> Compiler<'a> {
                 (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
             };
 
-        if can_assign && self.advance_if(token::Type::Equal) {
+        if can_assign && self.match_type(token::Type::Equal) {
             self.expression();
             self.emit(op_set);
         } else {
@@ -644,7 +642,7 @@ impl<'a> Compiler<'a> {
             .map(|(i, l)| (i as u8, l.initialized))
             .map(|(i, init)| {
                 if !init {
-                    self.error_previous("Can't read local variable in its own initializer");
+                    self.error("Can't read local variable in its own initializer");
                 }
                 i
             })
@@ -689,8 +687,8 @@ impl<'a> Compiler<'a> {
             self.infix_rule();
         }
 
-        if can_assign && self.advance_if(token::Type::Equal) {
-            self.error_previous("Invalid assignment target");
+        if can_assign && self.match_type(token::Type::Equal) {
+            self.error("Invalid assignment target");
         }
     }
 
@@ -703,7 +701,7 @@ impl<'a> Compiler<'a> {
             token::Type::Number => self.number(),
             token::Type::True | token::Type::False | token::Type::Nil => self.literal(),
             _ => {
-                self.error_previous("Expect expression");
+                self.error("Expect expression");
             }
         }
     }
@@ -723,13 +721,13 @@ impl<'a> Compiler<'a> {
             | token::Type::GreaterEqual
             | token::Type::Less
             | token::Type::LessEqual => self.binary(),
-            _ => self.error_previous("Expect expression"),
+            _ => self.error("Expect expression"),
         }
     }
 
     fn synchronize(&mut self) {
         self.panic = false;
-        while self.current_token.typ != token::Type::Eof {
+        while !self.check(token::Type::Eof) {
             if self.previous_token.typ == token::Type::Semicolon {
                 return;
             }
@@ -763,7 +761,14 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn advance_if(&mut self, typ: token::Type) -> bool {
+    fn check(&mut self, typ: token::Type) -> bool {
+        if self.current_token.typ != typ {
+            return false;
+        }
+        true
+    }
+
+    fn match_type(&mut self, typ: token::Type) -> bool {
         if self.current_token.typ != typ {
             return false;
         }
@@ -774,16 +779,17 @@ impl<'a> Compiler<'a> {
     fn consume(&mut self, typ: token::Type, msg: &'static str) {
         if self.current_token.typ != typ {
             self.error_current(msg);
+            return;
         }
         self.advance();
     }
 
-    fn error_current(&mut self, message: &'static str) {
-        self.error_at(self.current_token.pos, self.current_token.lexeme, message)
+    fn error(&mut self, message: &'static str) {
+        self.error_at(self.previous_token.pos, self.previous_token.lexeme, message)
     }
 
-    fn error_previous(&mut self, message: &'static str) {
-        self.error_at(self.previous_token.pos, self.previous_token.lexeme, message)
+    fn error_current(&mut self, message: &'static str) {
+        self.error_at(self.current_token.pos, self.current_token.lexeme, message)
     }
 
     fn error_at(&mut self, pos: Position, lexeme: &str, message: &'static str) {
