@@ -39,11 +39,7 @@ fn run_repl() {
                 if n == 0 {
                     break;
                 }
-                if let Err(Error::Runtime(err)) = vm.interpret(&line) {
-                    eprintln!("{}", err);
-                    vm.print_stack_trace();
-                    vm.reset_stack();
-                }
+                vm.interpret(&line).ok();
             }
         }
     }
@@ -61,14 +57,7 @@ fn run_file(path: &str) {
     let mut vm = rlox::VM::default();
     match vm.interpret(&src) {
         Ok(()) => {}
-        Err(Error::Runtime(err)) => {
-            eprintln!("{}", err);
-            vm.print_stack_trace();
-            vm.reset_stack();
-            process::exit(70);
-        }
-        Err(Error::Compile) => {
-            process::exit(65);
-        }
+        Err(Error::Runtime) => process::exit(70),
+        Err(Error::Compile) => process::exit(65),
     }
 }

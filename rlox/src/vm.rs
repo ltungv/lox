@@ -47,30 +47,20 @@ impl VM {
         let mut compiler = Compiler::new(src);
         compiler.compile();
 
-        let fun = Rc::new(compiler.finish().ok_or(Error::Compile)?);
-        self.stack.push(Value::Fun(Rc::clone(&fun)));
-        self.call(fun, 0)?;
-        self.run()?;
-        Ok(())
-    }
+        let fun = compiler.finish().ok_or(Error::Compile)?;
+        let fun = Rc::new(fun);
 
-    /// Print out where execution stop right before the error
-    pub fn print_stack_trace(&self) {
-        for frame in self.frames.iter().rev() {
-            let (_, pos) = frame.fun.chunk.read_instruction(frame.ip - 1);
-            let fname = intern::str(frame.fun.name);
-            if fname.is_empty() {
-                eprintln!("{} in script.", pos);
-            } else {
-                eprintln!("{} in {}().", pos, fname);
-            }
-        }
-    }
-
-    /// Clear current stack and frames
-    pub fn reset_stack(&mut self) {
-        self.stack.clear();
-        self.frames.clear();
+        || -> Result<(), RuntimeError> {
+            self.stack.push(Value::Fun(Rc::clone(&fun)));
+            self.call(fun, 0)?;
+            self.run()
+        }()
+        .map_err(|err| {
+            eprintln!("{}", err);
+            self.print_stack_trace();
+            self.reset_stack();
+            Error::Runtime
+        })
     }
 
     /// Run the virtual machine with it currently given chunk.
@@ -109,7 +99,7 @@ impl VM {
                         return Ok(());
                     }
                     while self.stack.len() != frame.slot {
-                        self.stack.pop();
+                        self.pop();
                     }
                     self.push(val)?;
                 }
@@ -378,6 +368,25 @@ impl VM {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Invalid bytecodes")
+    }
+
+    /// Clear current stack and frames
+    fn reset_stack(&mut self) {
+        self.stack.clear();
+        self.frames.clear();
+    }
+
+    /// Print out where execution stop right before the error
+    fn print_stack_trace(&self) {
+        for frame in self.frames.iter().rev() {
+            let (_, pos) = frame.fun.chunk.read_instruction(frame.ip - 1);
+            let fname = intern::str(frame.fun.name);
+            if fname.is_empty() {
+                eprintln!("{} in script.", pos);
+            } else {
+                eprintln!("{} in {}().", pos, fname);
+            }
+        }
     }
 }
 

@@ -1,8 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    intern, token, Chunk, ObjFun, OpCode, ParseError, Position, Scanner, StringId, Token, Value,
-    MAX_STACK,
+    intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StringId, Token, Value, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
@@ -112,6 +111,7 @@ pub struct Compiler<'a> {
     current_token: Token<'a>,
     previous_token: Token<'a>,
     had_error: bool,
+    panic: bool,
     // Avoid having a linked list of compiler, solution found from
     // https://github.com/tdp2110/crafting-interpreters-rs/blob/trunk/src/compiler.rs
     nestings: Vec<Nesting>,
@@ -133,6 +133,7 @@ impl<'a> Compiler<'a> {
                 pos: Position::default(),
             },
             had_error: false,
+            panic: false,
             nestings: vec![Nesting::new(ObjFun::default(), FunType::Script)],
         }
     }
@@ -141,27 +142,22 @@ impl<'a> Compiler<'a> {
     pub fn compile(&mut self) {
         self.advance();
         while self.current_token.typ != token::Type::Eof {
-            if let Err(err) = self.declaration() {
-                eprintln!("{}", err);
-                self.had_error = true;
-                self.synchronize();
-            }
+            self.declaration();
         }
     }
 
     /// Return the compiled bytecode chunk if the process finishes without error
     pub fn finish(&mut self) -> Option<ObjFun> {
         if self.had_error {
-            None
-        } else {
-            self.emit_return();
-            #[cfg(debug_assertions)]
-            disassemble_chunk(
-                &self.nest().fun.chunk,
-                format!("{}", self.nest().fun).as_str(),
-            );
-            self.nestings.pop().map(|n| n.fun)
+            return None;
         }
+        self.emit_return();
+        #[cfg(debug_assertions)]
+        disassemble_chunk(
+            &self.nest().fun.chunk,
+            format!("{}", self.nest().fun).as_str(),
+        );
+        Some(self.nestings.pop().expect("Cannot be empty").fun)
     }
 
     fn chunk(&mut self) -> &mut Chunk {
@@ -176,16 +172,13 @@ impl<'a> Compiler<'a> {
         self.nestings.last_mut().expect("Cannot be empty")
     }
 
-    fn make_const(&mut self, v: Value) -> Result<u8, ParseError> {
+    fn make_const(&mut self, v: Value) -> u8 {
         if self.chunk().const_count() == MAX_CHUNK_CONSTANTS {
-            return Err(ParseError::LimitReached(
-                self.previous_token.pos,
-                self.previous_token.lexeme.to_string(),
-                "Too many constants in one chunk",
-            ));
+            self.error_previous("Too many constants in one chunk");
+            return MAX_CHUNK_CONSTANTS as u8;
         }
         let const_id = self.chunk().write_const(v);
-        Ok(const_id as u8)
+        const_id as u8
     }
 
     fn emit(&mut self, op: OpCode) {
@@ -203,34 +196,26 @@ impl<'a> Compiler<'a> {
         self.chunk().instructions_count()
     }
 
-    fn patch_jump(&mut self, jump: usize) -> Result<(), ParseError> {
+    fn patch_jump(&mut self, jump: usize) {
         let offset = self.chunk().instructions_count() - jump;
         if offset > u16::MAX as usize {
-            return Err(ParseError::LimitReached(
-                self.current_token.pos,
-                self.current_token.lexeme.to_string(),
-                "Too much code to jump over",
-            ));
+            self.error_current("Too much code to jump over");
+            return;
         }
         self.chunk().patch_jump_instruction(jump - 1, offset as u16);
-        Ok(())
     }
 
-    fn emit_loop(&mut self, loop_start: usize) -> Result<(), ParseError> {
+    fn emit_loop(&mut self, loop_start: usize) {
         // +1 because the offset also takes into account the newly emitted loop opcode
         let offset = self.chunk().instructions_count() - loop_start + 1;
         if offset > u16::MAX as usize {
-            return Err(ParseError::LimitReached(
-                self.previous_token.pos,
-                self.previous_token.lexeme.to_string(),
-                "Loop body too large",
-            ));
+            self.error_previous("Loop body too large");
+            return;
         }
         self.emit(OpCode::Loop(offset as u16));
-        Ok(())
     }
 
-    fn declaration(&mut self) -> Result<(), ParseError> {
+    fn declaration(&mut self) {
         if self.advance_if(token::Type::Fun) {
             self.fun_declaration()
         } else if self.advance_if(token::Type::Var) {
@@ -238,17 +223,20 @@ impl<'a> Compiler<'a> {
         } else {
             self.statement()
         }
+
+        if self.panic {
+            self.synchronize();
+        }
     }
 
-    fn fun_declaration(&mut self) -> Result<(), ParseError> {
-        let ident_id = self.parse_variable()?;
+    fn fun_declaration(&mut self) {
+        let ident_id = self.parse_variable();
         self.mark_initialized();
-        self.function(FunType::Function)?;
+        self.function(FunType::Function);
         self.define_variable(ident_id);
-        Ok(())
     }
 
-    fn function(&mut self, fun_t: FunType) -> Result<(), ParseError> {
+    fn function(&mut self, fun_t: FunType) {
         let name = intern::id(self.previous_token.lexeme);
         self.nestings.push(Nesting::new(
             ObjFun {
@@ -260,19 +248,15 @@ impl<'a> Compiler<'a> {
         ));
         self.begin_scope();
 
-        self.consume(token::Type::LParen, "Expect '(' after function name")?;
+        self.consume(token::Type::LParen, "Expect '(' after function name");
         if self.current_token.typ != token::Type::RParen {
             loop {
                 if self.nest_mut().fun.arity as usize == MAX_PARAMS {
-                    return Err(ParseError::LimitReached(
-                        self.current_token.pos,
-                        self.current_token.lexeme.to_string(),
-                        "Can't have more than 255 parameters",
-                    ));
+                    self.error_current("Can't have more than 255 parameters");
                 }
 
                 self.nest_mut().fun.arity += 1;
-                let ident_id = self.parse_variable()?;
+                let ident_id = self.parse_variable();
                 self.define_variable(ident_id);
 
                 if !self.advance_if(token::Type::Comma) {
@@ -280,21 +264,22 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        self.consume(token::Type::RParen, "Expect ')' after parameters")?;
-        self.consume(token::Type::LBrace, "Expect '{' before function body")?;
-        self.block()?;
+        self.consume(token::Type::RParen, "Expect ')' after parameters");
+        self.consume(token::Type::LBrace, "Expect '{' before function body");
+        self.block();
 
-        let fun = Rc::new(self.finish().expect("Errors are catched above."));
-        let const_id = self.make_const(Value::Fun(fun))?;
-        self.emit(OpCode::Constant(const_id));
-        Ok(())
+        if let Some(fun) = self.finish() {
+            let fun = Rc::new(fun);
+            let const_id = self.make_const(Value::Fun(fun));
+            self.emit(OpCode::Constant(const_id));
+        }
     }
 
-    fn var_declaration(&mut self) -> Result<(), ParseError> {
-        let ident_id = self.parse_variable()?;
+    fn var_declaration(&mut self) {
+        let ident_id = self.parse_variable();
         // initializer
         if self.advance_if(token::Type::Equal) {
-            self.expression()?;
+            self.expression();
         } else {
             self.emit(OpCode::Nil);
         }
@@ -302,54 +287,50 @@ impl<'a> Compiler<'a> {
         self.consume(
             token::Type::Semicolon,
             "Expect ';' after variable declaration",
-        )?;
+        );
         self.define_variable(ident_id);
-        Ok(())
     }
 
-    fn parse_variable(&mut self) -> Result<u8, ParseError> {
-        self.consume(token::Type::Ident, "Expect variable name")?;
-        self.declare_variable()?;
+    fn parse_variable(&mut self) -> u8 {
+        self.consume(token::Type::Ident, "Expect variable name");
+        self.declare_variable();
         self.identifier_constant()
     }
 
-    fn identifier_constant(&mut self) -> Result<u8, ParseError> {
+    fn identifier_constant(&mut self) -> u8 {
         if self.nest().scope_depth > 0 {
-            Ok(0) // A dummy value used when we're not in the global scope
+            0 // A dummy value used when we're not in the global scope
         } else {
             let name = intern::id(self.previous_token.lexeme);
             self.make_const(Value::String(name))
         }
     }
 
-    fn declare_variable(&mut self) -> Result<(), ParseError> {
+    fn declare_variable(&mut self) {
         if self.nest().scope_depth == 0 {
-            return Ok(());
+            return;
         }
         if self.nest().locals.len() == MAX_LOCAL_VARIABLES {
-            return Err(ParseError::InvalidDeclaration(
-                self.previous_token.pos,
-                self.previous_token.lexeme.to_string(),
-                "Too many local variables in function",
-            ));
+            self.error_previous("Too many local variables in function");
         }
 
         let name = intern::id(self.previous_token.lexeme);
+        let mut name_duplicated = false;
         for l in self.nest().locals.iter() {
             if l.initialized && l.depth < self.nest().scope_depth {
                 break;
             }
             if l.name == name {
-                return Err(ParseError::InvalidDeclaration(
-                    self.previous_token.pos,
-                    self.previous_token.lexeme.to_string(),
-                    "Already a variable with this name in this scope",
-                ));
+                name_duplicated = true;
+                break;
             }
         }
+        if name_duplicated {
+            self.error_previous("Already a variable with this name in this scope");
+        }
+
         let scope_depth = self.nest().scope_depth;
         self.nest_mut().locals.push((name, scope_depth).into());
-        Ok(())
     }
 
     fn define_variable(&mut self, ident_id: u8) {
@@ -373,34 +354,33 @@ impl<'a> Compiler<'a> {
             .initialized = true;
     }
 
-    fn statement(&mut self) -> Result<(), ParseError> {
+    fn statement(&mut self) {
         if self.advance_if(token::Type::Print) {
-            self.print_statement()
+            self.print_statement();
         } else if self.advance_if(token::Type::For) {
-            self.for_statement()
+            self.for_statement();
         } else if self.advance_if(token::Type::If) {
-            self.if_statement()
+            self.if_statement();
         } else if self.advance_if(token::Type::Return) {
-            self.return_statement()
+            self.return_statement();
         } else if self.advance_if(token::Type::While) {
-            self.while_statement()
+            self.while_statement();
         } else if self.advance_if(token::Type::LBrace) {
             self.begin_scope();
-            self.block()?;
+            self.block();
             self.end_scope();
-            Ok(())
         } else {
-            self.expression_statement()
+            self.expression_statement();
         }
     }
 
-    fn block(&mut self) -> Result<(), ParseError> {
+    fn block(&mut self) {
         while self.current_token.typ != token::Type::RBrace
             && self.current_token.typ != token::Type::Eof
         {
-            self.declaration()?;
+            self.declaration();
         }
-        self.consume(token::Type::RBrace, "Expect '}' after block")
+        self.consume(token::Type::RBrace, "Expect '}' after block");
     }
 
     fn begin_scope(&mut self) {
@@ -418,76 +398,70 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn return_statement(&mut self) -> Result<(), ParseError> {
+    fn return_statement(&mut self) {
         if self.nest().fun_t == FunType::Script {
-            return Err(ParseError::UnexpectedToken(
-                self.previous_token.pos,
-                self.previous_token.lexeme.to_string(),
-                "Can't return from top-level code",
-            ));
+            self.error_previous("Can't return from top-level code")
         }
 
         if self.advance_if(token::Type::Semicolon) {
             self.emit_return();
         } else {
-            self.expression()?;
-            self.consume(token::Type::Semicolon, "Expect ';' after return value")?;
+            self.expression();
+            self.consume(token::Type::Semicolon, "Expect ';' after return value");
             self.emit(OpCode::Return);
         }
-        Ok(())
     }
 
-    fn if_statement(&mut self) -> Result<(), ParseError> {
-        self.consume(token::Type::LParen, "Expect '(' after 'if'")?;
-        self.expression()?;
-        self.consume(token::Type::RParen, "Expect ')' after condition")?;
+    fn if_statement(&mut self) {
+        self.consume(token::Type::LParen, "Expect '(' after 'if'");
+        self.expression();
+        self.consume(token::Type::RParen, "Expect ')' after condition");
 
         // This jumps to the else clause
         let then_jump = self.emit_jump(OpCode::JumpIfFalse);
         // Jump does not pop the conditional out of the stack, so we do it manually.
         // Here we pop the true value.
         self.emit(OpCode::Pop);
-        self.statement()?;
+        self.statement();
 
         // This jumps through the else clause
         let else_jump = self.emit_jump(OpCode::Jump);
-        self.patch_jump(then_jump)?;
+        self.patch_jump(then_jump);
         // Here we pop the false value.
         self.emit(OpCode::Pop);
 
         if self.advance_if(token::Type::Else) {
-            self.statement()?;
+            self.statement();
         }
-        self.patch_jump(else_jump)
+        self.patch_jump(else_jump);
     }
 
-    fn while_statement(&mut self) -> Result<(), ParseError> {
+    fn while_statement(&mut self) {
         let loop_start = self.chunk().instructions_count();
-        self.consume(token::Type::LParen, "Expect '(' after 'while'")?;
-        self.expression()?;
-        self.consume(token::Type::RParen, "Expect ')' after condition")?;
+        self.consume(token::Type::LParen, "Expect '(' after 'while'");
+        self.expression();
+        self.consume(token::Type::RParen, "Expect ')' after condition");
 
         let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
         self.emit(OpCode::Pop);
 
-        self.statement()?;
-        self.emit_loop(loop_start)?;
+        self.statement();
+        self.emit_loop(loop_start);
 
-        self.patch_jump(exit_jump)?;
+        self.patch_jump(exit_jump);
         self.emit(OpCode::Pop);
-        Ok(())
     }
 
-    fn for_statement(&mut self) -> Result<(), ParseError> {
+    fn for_statement(&mut self) {
         self.begin_scope();
-        self.consume(token::Type::LParen, "Expect '(' after 'for'")?;
+        self.consume(token::Type::LParen, "Expect '(' after 'for'");
         // initializer clause
         if self.advance_if(token::Type::Semicolon) {
             // no initializer
         } else if self.advance_if(token::Type::Var) {
-            self.var_declaration()?;
+            self.var_declaration();
         } else {
-            self.expression_statement()?;
+            self.expression_statement();
         }
 
         let mut loop_start = self.chunk().instructions_count();
@@ -495,8 +469,8 @@ impl<'a> Compiler<'a> {
         // conditional clause
         let exit_jump = if !self.advance_if(token::Type::Semicolon) {
             // conditional expression
-            self.expression()?;
-            self.consume(token::Type::Semicolon, "Expect ';' after loop condition")?;
+            self.expression();
+            self.consume(token::Type::Semicolon, "Expect ';' after loop condition");
             // exit if consitional expression is falsey
             let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
             // pop true when not jump
@@ -512,52 +486,48 @@ impl<'a> Compiler<'a> {
             let body_jump = self.emit_jump(OpCode::Jump);
             let increment_start = self.chunk().instructions_count();
             // increment expression
-            self.expression()?;
+            self.expression();
             // pop expression result
             self.emit(OpCode::Pop);
-            self.consume(token::Type::RParen, "Expect ')' after for clauses")?;
+            self.consume(token::Type::RParen, "Expect ')' after for clauses");
 
             // this will loop back to the conditional after the increment expression is run
-            self.emit_loop(loop_start)?;
+            self.emit_loop(loop_start);
             // the loop start to point to the increment expression
             loop_start = increment_start;
-            self.patch_jump(body_jump)?;
+            self.patch_jump(body_jump);
         }
 
-        self.statement()?;
+        self.statement();
         // this will loop back to the increment expression if there is one, otherwise it loops back
         // to the conditional expression
-        self.emit_loop(loop_start)?;
+        self.emit_loop(loop_start);
 
         if let Some(exit_jump) = exit_jump {
-            self.patch_jump(exit_jump)?;
+            self.patch_jump(exit_jump);
             // pop false when get jumped into
             self.emit(OpCode::Pop);
         }
-
         self.end_scope();
-        Ok(())
     }
 
-    fn print_statement(&mut self) -> Result<(), ParseError> {
-        self.expression()?;
-        self.consume(token::Type::Semicolon, "Expect ';' after for clauses value")?;
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(token::Type::Semicolon, "Expect ';' after value");
         self.emit(OpCode::Print);
-        Ok(())
     }
 
-    fn expression_statement(&mut self) -> Result<(), ParseError> {
-        self.expression()?;
-        self.consume(token::Type::Semicolon, "Expect ';' after expression")?;
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(token::Type::Semicolon, "Expect ';' after expression");
         self.emit(OpCode::Pop);
-        Ok(())
     }
 
-    fn expression(&mut self) -> Result<(), ParseError> {
+    fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment)
     }
 
-    fn or(&mut self) -> Result<(), ParseError> {
+    fn or(&mut self) {
         // Short-circuit jump.
         // If the value on top of the stack is falsey, we make a small jump skipping passs the jump
         // right beneath. Otherwise we go to the jump right beneath us to jump pass the rest of the
@@ -565,15 +535,15 @@ impl<'a> Compiler<'a> {
         let else_jump = self.emit_jump(OpCode::JumpIfFalse);
         let end_jump = self.emit_jump(OpCode::Jump);
 
-        self.patch_jump(else_jump)?;
+        self.patch_jump(else_jump);
         // Pop false value if not short-circuited
         self.emit(OpCode::Pop);
 
-        self.parse_precedence(Precedence::Or)?;
-        self.patch_jump(end_jump)
+        self.parse_precedence(Precedence::Or);
+        self.patch_jump(end_jump);
     }
 
-    fn and(&mut self) -> Result<(), ParseError> {
+    fn and(&mut self) {
         // Short-circuit jump.
         // If the value on top of the stack is falsey, jumps pass the rest of the
         // operands.
@@ -581,13 +551,13 @@ impl<'a> Compiler<'a> {
         // Pop true value if not short-circuited
         self.emit(OpCode::Pop);
 
-        self.parse_precedence(Precedence::And)?;
-        self.patch_jump(end_jump)
+        self.parse_precedence(Precedence::And);
+        self.patch_jump(end_jump);
     }
 
-    fn binary(&mut self) -> Result<(), ParseError> {
+    fn binary(&mut self) {
         let token_type = self.previous_token.typ;
-        self.parse_precedence(Precedence::of(token_type).next())?;
+        self.parse_precedence(Precedence::of(token_type).next());
         match token_type {
             token::Type::BangEqual => {
                 self.emit(OpCode::Equal);
@@ -610,37 +580,31 @@ impl<'a> Compiler<'a> {
             token::Type::Slash => self.emit(OpCode::Divide),
             _ => unreachable!("Rule table is wrong"),
         }
-        Ok(())
     }
 
-    fn unary(&mut self) -> Result<(), ParseError> {
+    fn unary(&mut self) {
         let token_type = self.previous_token.typ;
-        self.parse_precedence(Precedence::Unary)?;
+        self.parse_precedence(Precedence::Unary);
         match token_type {
             token::Type::Bang => self.emit(OpCode::Not),
             token::Type::Minus => self.emit(OpCode::Negate),
             _ => unreachable!("Rule table is wrong"),
         }
-        Ok(())
     }
 
-    fn call(&mut self) -> Result<(), ParseError> {
-        let arg_count = self.argument_list()?;
+    fn call(&mut self) {
+        let arg_count = self.argument_list();
         self.emit(OpCode::Call(arg_count));
-        Ok(())
     }
 
-    fn argument_list(&mut self) -> Result<u8, ParseError> {
+    fn argument_list(&mut self) -> u8 {
         let mut arg_count = 0;
         if self.current_token.typ != token::Type::RParen {
             loop {
-                self.expression()?;
+                self.expression();
                 if arg_count == MAX_PARAMS {
-                    return Err(ParseError::LimitReached(
-                        self.previous_token.pos,
-                        self.previous_token.lexeme.to_string(),
-                        "Can't have more than 255 arguments",
-                    ));
+                    self.error_previous("Can't have more than 255 arguments");
+                    return MAX_PARAMS as u8;
                 }
                 arg_count += 1;
                 if !self.advance_if(token::Type::Comma) {
@@ -648,64 +612,57 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        self.consume(token::Type::RParen, "Expect ')' after arguments")?;
-        Ok(arg_count as u8)
+        self.consume(token::Type::RParen, "Expect ')' after arguments");
+        arg_count as u8
     }
 
-    fn variable(&mut self, can_assign: bool) -> Result<(), ParseError> {
-        let (op_get, op_set) = if let Some(local) = self.resolve_local(&self.previous_token)? {
-            (OpCode::GetLocal(local), OpCode::SetLocal(local))
-        } else {
-            let name = intern::id(self.previous_token.lexeme);
-            let ident_id = self.make_const(Value::String(name))?;
-            (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
-        };
+    fn variable(&mut self, can_assign: bool) {
+        let (op_get, op_set) =
+            if let Some(local) = self.resolve_local(intern::id(self.previous_token.lexeme)) {
+                (OpCode::GetLocal(local), OpCode::SetLocal(local))
+            } else {
+                let name = intern::id(self.previous_token.lexeme);
+                let ident_id = self.make_const(Value::String(name));
+                (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
+            };
 
         if can_assign && self.advance_if(token::Type::Equal) {
-            self.expression()?;
+            self.expression();
             self.emit(op_set);
         } else {
             self.emit(op_get);
         }
-        Ok(())
     }
 
-    fn resolve_local(&self, name: &Token) -> Result<Option<u8>, ParseError> {
+    fn resolve_local(&mut self, name: StringId) -> Option<u8> {
         self.nest()
             .locals
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, l)| l.name == intern::id(name.lexeme))
-            .map(|(i, l)| {
-                if l.initialized {
-                    Ok(i as u8)
-                } else {
-                    Err(ParseError::InvalidDeclaration(
-                        name.pos,
-                        name.lexeme.to_string(),
-                        "Can't read local variable in its own initializer",
-                    ))
+            .find(|(_, l)| l.name == name)
+            .map(|(i, l)| (i as u8, l.initialized))
+            .map(|(i, init)| {
+                if !init {
+                    self.error_previous("Can't read local variable in its own initializer");
                 }
+                i
             })
-            .transpose()
     }
 
-    fn string(&mut self) -> Result<(), ParseError> {
+    fn string(&mut self) {
         let value =
             intern::id(&self.previous_token.lexeme[1..self.previous_token.lexeme.len() - 1]);
-        let constant = self.make_const(Value::String(value))?;
+        let constant = self.make_const(Value::String(value));
         self.emit(OpCode::Constant(constant));
-        Ok(())
     }
 
-    fn number(&mut self) -> Result<(), ParseError> {
+    fn number(&mut self) {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
             .expect("Validated by scanner");
-        let constant = self.make_const(Value::Number(value))?;
+        let constant = self.make_const(Value::Number(value));
         self.emit(OpCode::Constant(constant));
-        Ok(())
     }
 
     fn literal(&mut self) {
@@ -717,52 +674,41 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn grouping(&mut self) -> Result<(), ParseError> {
-        self.expression()?;
-        self.consume(token::Type::RParen, "Expect ')' after expression")?;
-        Ok(())
+    fn grouping(&mut self) {
+        self.expression();
+        self.consume(token::Type::RParen, "Expect ')' after expression");
     }
 
-    fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ParseError> {
+    fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence <= Precedence::Assignment;
-        self.prefix_rule(can_assign)?;
+        self.prefix_rule(can_assign);
 
         while precedence <= Precedence::of(self.current_token.typ) {
             self.advance();
-            self.infix_rule()?;
+            self.infix_rule();
         }
 
         if can_assign && self.advance_if(token::Type::Equal) {
-            return Err(ParseError::UnexpectedToken(
-                self.previous_token.pos,
-                self.previous_token.lexeme.to_string(),
-                "Invalid assignment target",
-            ));
+            self.error_previous("Invalid assignment target");
         }
-        Ok(())
     }
 
-    fn prefix_rule(&mut self, can_assign: bool) -> Result<(), ParseError> {
+    fn prefix_rule(&mut self, can_assign: bool) {
         match self.previous_token.typ {
-            token::Type::LParen => self.grouping()?,
-            token::Type::Minus | token::Type::Bang => self.unary()?,
-            token::Type::Ident => self.variable(can_assign)?,
-            token::Type::String => self.string()?,
-            token::Type::Number => self.number()?,
+            token::Type::LParen => self.grouping(),
+            token::Type::Minus | token::Type::Bang => self.unary(),
+            token::Type::Ident => self.variable(can_assign),
+            token::Type::String => self.string(),
+            token::Type::Number => self.number(),
             token::Type::True | token::Type::False | token::Type::Nil => self.literal(),
             _ => {
-                return Err(ParseError::UnexpectedToken(
-                    self.previous_token.pos,
-                    self.previous_token.lexeme.to_string(),
-                    "Expect expression",
-                ))
+                self.error_previous("Expect expression");
             }
         }
-        Ok(())
     }
 
-    fn infix_rule(&mut self) -> Result<(), ParseError> {
+    fn infix_rule(&mut self) {
         match self.previous_token.typ {
             token::Type::LParen => self.call(),
             token::Type::Or => self.or(),
@@ -777,21 +723,15 @@ impl<'a> Compiler<'a> {
             | token::Type::GreaterEqual
             | token::Type::Less
             | token::Type::LessEqual => self.binary(),
-            _ => Err(ParseError::UnexpectedToken(
-                self.previous_token.pos,
-                self.previous_token.lexeme.to_string(),
-                "Expect expression",
-            )),
+            _ => self.error_previous("Expect expression"),
         }
     }
 
     fn synchronize(&mut self) {
+        self.panic = false;
         while self.current_token.typ != token::Type::Eof {
             if self.previous_token.typ == token::Type::Semicolon {
-                match self.current_token.typ {
-                    token::Type::RParen | token::Type::RBrace => {}
-                    _ => return,
-                }
+                return;
             }
             match self.current_token.typ {
                 token::Type::Class
@@ -831,16 +771,33 @@ impl<'a> Compiler<'a> {
         true
     }
 
-    fn consume(&mut self, typ: token::Type, msg: &'static str) -> Result<(), ParseError> {
+    fn consume(&mut self, typ: token::Type, msg: &'static str) {
         if self.current_token.typ != typ {
-            return Err(ParseError::UnexpectedToken(
-                self.current_token.pos,
-                self.current_token.lexeme.to_string(),
-                msg,
-            ));
+            self.error_current(msg);
         }
         self.advance();
-        Ok(())
+    }
+
+    fn error_current(&mut self, message: &'static str) {
+        self.error_at(self.current_token.pos, self.current_token.lexeme, message)
+    }
+
+    fn error_previous(&mut self, message: &'static str) {
+        self.error_at(self.previous_token.pos, self.previous_token.lexeme, message)
+    }
+
+    fn error_at(&mut self, pos: Position, lexeme: &str, message: &'static str) {
+        if self.panic {
+            return;
+        }
+        self.had_error = true;
+        self.panic = true;
+
+        if lexeme.is_empty() {
+            eprintln!("{} Error at end: {}.", pos, message)
+        } else {
+            eprintln!("{} Error at '{}': {}.", pos, lexeme, message)
+        }
     }
 }
 
