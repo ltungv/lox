@@ -2,11 +2,20 @@ use std::{fmt, rc::Rc};
 
 use crate::{intern, Chunk, StringId, Value};
 
+/// A structure for managing closed-over value
+#[derive(Debug)]
+pub struct ObjUpvalue {
+    /// This field stores a slot offset which points to a value that was closed over
+    pub location: usize,
+}
+
 /// A function that capter its surrounding environemnt,
 #[derive(Debug)]
 pub struct ObjClosure {
     /// The base function of this closure
     pub fun: Rc<ObjFun>,
+    /// Upvalues for indirect access to closed-over variables
+    pub upvalues: Vec<Rc<ObjUpvalue>>,
 }
 
 /// A function object that holds the bytecode of the function along with other metadata

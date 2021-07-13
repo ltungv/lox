@@ -1,8 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, RuntimeError, StringId, Upvalue,
-    Value, MAX_FRAMES, MAX_STACK,
+    intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, ObjUpvalue, RuntimeError, StringId,
+    Upvalue, Value, MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
@@ -146,6 +146,7 @@ impl VM {
             self.push(Value::Fun(Rc::clone(&fun)))?;
             let closure = Rc::new(ObjClosure {
                 fun: Rc::clone(&fun),
+                upvalues: Vec::new(),
             });
             self.pop();
             self.push(Value::Closure(Rc::clone(&closure)))?;
@@ -189,18 +190,26 @@ impl VM {
                 OpCode::Call(argc) => {
                     self.call_value(self.peek(argc as usize).clone(), argc)?;
                 }
-                OpCode::Closure(fun_idx, _upvalues) => {
+                OpCode::Closure(fun_idx, upvalues) => {
                     // TODO: upvalues implementation
-                    let fun = self.chunk().read_const(fun_idx as usize);
-                    match fun {
-                        Value::Fun(fun) => {
-                            let closure = Rc::new(ObjClosure {
-                                fun: Rc::clone(fun),
-                            });
-                            self.push(Value::Closure(closure))?;
+                    let fun = if let Value::Fun(fun) = self.chunk().read_const(fun_idx as usize) {
+                        Rc::clone(&fun)
+                    } else {
+                        unreachable!("Value must be a function object");
+                    };
+
+                    let upvalues = upvalues.iter().map(|upvalue| {
+                        if upvalue.is_local {
+                            self.capture_upvalue(self.frame().slot + upvalue.index as usize)
+                        } else {
+                            Rc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
                         }
-                        _ => unreachable!("Value must be a function object"),
-                    }
+                    });
+                    let closure = Rc::new(ObjClosure {
+                        fun,
+                        upvalues: upvalues.collect(),
+                    });
+                    self.push(Value::Closure(closure))?;
                 }
                 OpCode::Return => {
                     let val = self.pop();
@@ -218,11 +227,16 @@ impl VM {
                     let v = self.pop();
                     println!("{}", v);
                 }
-                OpCode::GetUpvalue(ref _id) => {
-                    // TODO: Get upvalue
+                OpCode::GetUpvalue(ref slot) => {
+                    let slot = *slot as usize;
+                    let location = self.frame().closure.upvalues[slot].location;
+                    let value = self.stack[location].clone();
+                    self.push(value.clone())?
                 }
-                OpCode::SetUpvalue(ref _id) => {
-                    // TODO: Get upvalue
+                OpCode::SetUpvalue(ref slot) => {
+                    let slot = *slot as usize;
+                    let location = self.frame().closure.upvalues[slot].location;
+                    self.stack[location] = self.peek(0).clone();
                 }
                 OpCode::GetLocal(ref slot) => {
                     let local = self.stack[self.frame().slot + *slot as usize].clone();
@@ -389,6 +403,10 @@ impl VM {
                 "Can only call functions and classes".to_string(),
             )),
         }
+    }
+
+    fn capture_upvalue(&mut self, location: usize) -> Rc<ObjUpvalue> {
+        Rc::new(ObjUpvalue { location })
     }
 
     fn call(&mut self, closure: Rc<ObjClosure>, argc: u8) -> Result<(), RuntimeError> {

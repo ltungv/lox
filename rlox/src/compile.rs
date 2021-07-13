@@ -285,6 +285,9 @@ impl<'a> Compiler<'a> {
         let fun = level.fun;
         let upvalues = level.upvalues;
 
+        #[cfg(debug_assertions)]
+        disassemble_chunk(&fun.chunk, format!("{}", fun).as_str());
+
         let fun = Rc::new(fun);
         let const_id = self.make_const(Value::Fun(fun));
         self.emit(OpCode::Closure(const_id, upvalues));
