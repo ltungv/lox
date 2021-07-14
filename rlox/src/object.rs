@@ -6,14 +6,14 @@ use crate::{intern, Chunk, StrId, Value};
 #[derive(Debug)]
 pub struct ObjInstance {
     /// The class type of this instance
-    pub class: Rc<ObjClass>,
+    pub class: Rc<RefCell<ObjClass>>,
     /// The fields that this instance stores
     pub fields: HashMap<StrId, Value>,
 }
 
 impl ObjInstance {
     /// Create a new instance of the given class.
-    pub fn new(class: Rc<ObjClass>) -> Self {
+    pub fn new(class: Rc<RefCell<ObjClass>>) -> Self {
         Self {
             class,
             fields: HashMap::new(),
@@ -23,7 +23,7 @@ impl ObjInstance {
 
 impl fmt::Display for ObjInstance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "{} instance", intern::str(self.class.name))
+        write!(f, "{} instance", intern::str(self.class.borrow().name))
     }
 }
 
@@ -32,18 +32,45 @@ impl fmt::Display for ObjInstance {
 pub struct ObjClass {
     /// Class name
     pub name: StrId,
+    /// Mapping of all methods defined on the class
+    pub methods: HashMap<StrId, Value>,
 }
 
 impl ObjClass {
     /// Create a new class with the given name
     pub fn new(name: StrId) -> Self {
-        Self { name }
+        Self {
+            name,
+            methods: HashMap::new(),
+        }
     }
 }
 
 impl fmt::Display for ObjClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(f, "{}", intern::str(self.name))
+    }
+}
+
+/// A class method that is bound to the instance that it was called on
+#[derive(Debug)]
+pub struct ObjBoundMethod {
+    /// Bound instance
+    pub receiver: Value,
+    /// The closure object of the method
+    pub method: Rc<ObjClosure>,
+}
+
+impl ObjBoundMethod {
+    /// Create a new method bound to the given receiver
+    pub fn new(receiver: Value, method: Rc<ObjClosure>) -> Self {
+        Self { receiver, method }
+    }
+}
+
+impl fmt::Display for ObjBoundMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.method)
     }
 }
 

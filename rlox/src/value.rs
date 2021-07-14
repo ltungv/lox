@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{intern, ObjClass, ObjClosure, ObjFun, ObjInstance, StrId};
+use crate::{intern, ObjBoundMethod, ObjClass, ObjClosure, ObjFun, ObjInstance, StrId};
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
@@ -22,9 +22,11 @@ pub enum Value {
     /// A function object
     Fun(Rc<ObjFun>),
     /// A class object
-    Class(Rc<ObjClass>),
+    Class(Rc<RefCell<ObjClass>>),
     /// A class instance
     Instance(Rc<RefCell<ObjInstance>>),
+    /// A class instance
+    BoundMethod(Rc<RefCell<ObjBoundMethod>>),
 }
 
 impl fmt::Display for Value {
@@ -44,8 +46,9 @@ impl fmt::Display for Value {
             Self::NativeFun(fun) => write!(f, "{}", fun),
             Self::Closure(c) => write!(f, "{}", c),
             Self::Fun(fun) => write!(f, "{}", fun),
-            Self::Class(c) => write!(f, "{}", c),
+            Self::Class(c) => write!(f, "{}", c.borrow()),
             Self::Instance(i) => write!(f, "{}", i.borrow()),
+            Self::BoundMethod(m) => write!(f, "{}", m.borrow()),
         }
     }
 }

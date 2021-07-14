@@ -45,7 +45,7 @@ impl Chunk {
             OpCode::Jump(ref mut placeholder) | OpCode::JumpIfFalse(ref mut placeholder) => {
                 *placeholder = offset;
             }
-            _ => unreachable!("The given location must hold a jump instruction."),
+            _ => unreachable!(),
         }
     }
 
@@ -150,5 +150,6 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         OpCode::CloseUpvalue => println!("OP_CLOSE_UPVALUE"),
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Class(ref const_id) => constant_instruction("OP_CLASS", *const_id),
+        OpCode::Method(ref const_id) => constant_instruction("OP_METHOD", *const_id),
     }
 }

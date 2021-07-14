@@ -150,7 +150,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn level_pop(&mut self) -> Level {
-        self.levels.pop().expect("Cannot be empty")
+        self.levels.pop().expect("Wrong compiler state.")
     }
 
     fn level(&self, lvl: usize) -> &Level {
@@ -282,14 +282,29 @@ impl<'a> Compiler<'a> {
 
     fn class_declaration(&mut self) {
         self.consume(token::Type::Ident, "Expect class name");
+        let class_name = intern::id(self.previous_token.lexeme);
+
         let name_constant = self.identifier_constant();
         self.declare_variable();
 
         self.emit(OpCode::Class(name_constant));
         self.define_variable(name_constant);
 
+        self.named_variable(class_name, false);
         self.consume(token::Type::LBrace, "Expect '{' before class body");
+        while !self.check(token::Type::RBrace) && !self.check(token::Type::Eof) {
+            self.method();
+        }
         self.consume(token::Type::RBrace, "Expect '}' after class body");
+        self.emit(OpCode::Pop);
+    }
+
+    fn method(&mut self) {
+        self.consume(token::Type::Ident, "Expect method name");
+        let const_id = self.identifier_constant();
+
+        self.function(FunType::Function);
+        self.emit(OpCode::Method(const_id));
     }
 
     fn var_declaration(&mut self) {
@@ -369,7 +384,7 @@ impl<'a> Compiler<'a> {
         self.level_current_mut()
             .locals
             .last_mut()
-            .expect("Just pushed")
+            .expect("Undeclared.")
             .initialized = true;
     }
 
@@ -599,7 +614,7 @@ impl<'a> Compiler<'a> {
             token::Type::Minus => self.emit(OpCode::Subtract),
             token::Type::Star => self.emit(OpCode::Multiply),
             token::Type::Slash => self.emit(OpCode::Divide),
-            _ => unreachable!("Rule table is wrong"),
+            _ => unreachable!(),
         }
     }
 
@@ -609,7 +624,7 @@ impl<'a> Compiler<'a> {
         match token_type {
             token::Type::Bang => self.emit(OpCode::Not),
             token::Type::Minus => self.emit(OpCode::Negate),
-            _ => unreachable!("Rule table is wrong"),
+            _ => unreachable!(),
         }
     }
 
@@ -651,6 +666,10 @@ impl<'a> Compiler<'a> {
 
     fn variable(&mut self, can_assign: bool) {
         let var_name = intern::id(self.previous_token.lexeme);
+        self.named_variable(var_name, can_assign)
+    }
+
+    fn named_variable(&mut self, var_name: StrId, can_assign: bool) {
         let (op_get, op_set) = if let Some(local) = self.resolve_local(0, var_name) {
             (OpCode::GetLocal(local), OpCode::SetLocal(local))
         } else if let Some(upval) = self.resolve_upvalue(0, var_name) {
@@ -728,7 +747,7 @@ impl<'a> Compiler<'a> {
     fn number(&mut self) {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
-            .expect("Validated by scanner");
+            .expect("Unreachable.");
         let constant = self.make_const(Value::Number(value));
         self.emit(OpCode::Constant(constant));
     }
@@ -738,7 +757,7 @@ impl<'a> Compiler<'a> {
             token::Type::False => self.emit(OpCode::False),
             token::Type::Nil => self.emit(OpCode::Nil),
             token::Type::True => self.emit(OpCode::True),
-            _ => unreachable!("Rule table is wrong"),
+            _ => unreachable!(),
         }
     }
 

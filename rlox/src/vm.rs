@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, NativeFun, ObjClass, ObjClosure, ObjInstance, ObjUpvalue,
-    RuntimeError, StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
+    intern, Chunk, Compiler, Error, NativeFun, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance,
+    ObjUpvalue, RuntimeError, StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
@@ -101,6 +101,8 @@ pub enum OpCode {
     Return,
     /// Create a class and bind it to a name,
     Class(u8),
+    /// Define a method
+    Method(u8),
 }
 
 fn clock_native(_args: &[Value]) -> Value {
@@ -248,17 +250,12 @@ impl VM {
                 }
                 OpCode::GetProperty(ref const_id) => match self.pop() {
                     Value::Instance(instance) => {
-                        if let Value::Str(prop_name) = self.chunk().read_const(*const_id as usize) {
-                            match instance.borrow().fields.get(prop_name) {
-                                Some(val) => {
-                                    self.push(val.clone())?;
-                                }
-                                None => {
-                                    return Err(RuntimeError(format!(
-                                        "Undefined property '{}'.",
-                                        intern::str(*prop_name)
-                                    )))
-                                }
+                        if let Value::Str(prop_name) = *self.chunk().read_const(*const_id as usize)
+                        {
+                            if let Some(val) = instance.borrow().fields.get(&prop_name) {
+                                self.push(val.clone())?;
+                            } else {
+                                self.bind_method(Rc::clone(&instance), prop_name)?
                             }
                         }
                     }
@@ -392,7 +389,7 @@ impl VM {
                 OpCode::Return => {
                     let val = self.pop();
                     self.close_upvalues(self.frame().slot);
-                    let frame = self.frames.pop().expect("Cannot be empty.");
+                    let frame = self.frames.pop().expect("Frames empty");
                     if self.frames.is_empty() {
                         self.pop();
                         return Ok(());
@@ -404,8 +401,13 @@ impl VM {
                 }
                 OpCode::Class(ref const_id) => {
                     if let Value::Str(name) = self.chunk().read_const(*const_id as usize) {
-                        let class = Rc::new(ObjClass::new(*name));
+                        let class = Rc::new(RefCell::new(ObjClass::new(*name)));
                         self.push(Value::Class(class))?;
+                    }
+                }
+                OpCode::Method(ref const_id) => {
+                    if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
+                        self.define_method(name);
                     }
                 }
             }
@@ -417,6 +419,7 @@ impl VM {
             Value::Closure(c) => self.call_closure(c, argc),
             Value::NativeFun(f) => self.call_native(f, argc),
             Value::Class(c) => self.call_class(c, argc),
+            Value::BoundMethod(m) => self.call_closure(Rc::clone(&m.borrow().method), argc),
             _ => Err(RuntimeError(
                 "Can only call functions and classes.".to_string(),
             )),
@@ -503,10 +506,40 @@ impl VM {
         Ok(())
     }
 
-    fn call_class(&mut self, class: Rc<ObjClass>, argc: u8) -> Result<(), RuntimeError> {
+    fn call_class(&mut self, class: Rc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
         *self.peek_mut(argc as usize) =
             Value::Instance(Rc::new(RefCell::new(ObjInstance::new(class))));
         Ok(())
+    }
+
+    fn define_method(&mut self, name: StrId) {
+        let method = self.pop();
+        if let Value::Class(class) = self.peek(0) {
+            let class = Rc::clone(class);
+            class.borrow_mut().methods.insert(name, method);
+        }
+    }
+
+    fn bind_method(
+        &mut self,
+        instance: Rc<RefCell<ObjInstance>>,
+        name: StrId,
+    ) -> Result<(), RuntimeError> {
+        match instance.borrow().class.borrow().methods.get(&name) {
+            Some(Value::Closure(method)) => {
+                let bound = Rc::new(RefCell::new(ObjBoundMethod::new(
+                    Value::Instance(Rc::clone(&instance)),
+                    Rc::clone(method),
+                )));
+                self.push(Value::BoundMethod(bound))?;
+                Ok(())
+            }
+            None => Err(RuntimeError(format!(
+                "Undefined property '{}'",
+                intern::str(name)
+            ))),
+            _ => unreachable!(),
+        }
     }
 
     fn next_instruction(&mut self) -> &OpCode {
@@ -521,22 +554,22 @@ impl VM {
     }
 
     fn frame(&self) -> &CallFrame {
-        self.frames.last().expect("Cannot be empty.")
+        self.frames.last().expect("Frames empty.")
     }
 
     fn frame_mut(&mut self) -> &mut CallFrame {
-        self.frames.last_mut().expect("Cannot be empty.")
+        self.frames.last_mut().expect("Frames empty.")
     }
 
     fn peek(&self, steps: usize) -> &Value {
         self.stack
             .get(self.stack.len() - 1 - steps)
-            .expect("Invalid bytecodes.")
+            .expect("Stack empty.")
     }
 
     fn peek_mut(&mut self, steps: usize) -> &mut Value {
         let idx = self.stack.len() - 1 - steps;
-        self.stack.get_mut(idx).expect("Invalid bytecodes.")
+        self.stack.get_mut(idx).expect("Stack empty.")
     }
 
     fn push(&mut self, val: Value) -> Result<(), RuntimeError> {
@@ -548,7 +581,7 @@ impl VM {
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop().expect("Invalid bytecodes.")
+        self.stack.pop().expect("Stack empty.")
     }
 
     /// Clear current stack and frames
