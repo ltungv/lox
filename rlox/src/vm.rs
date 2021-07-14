@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, ObjUpvalue, RuntimeError, StringId,
+    intern, Chunk, Compiler, Error, NativeFun, ObjClosure, ObjUpvalue, RuntimeError, StrId,
     Upvalue, Value, MAX_FRAMES, MAX_STACK,
 };
 
@@ -118,7 +118,7 @@ pub struct VM {
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
     open_upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
-    globals: HashMap<StringId, Value>,
+    globals: HashMap<StrId, Value>,
 }
 
 impl Default for VM {
@@ -262,19 +262,19 @@ impl VM {
                     self.stack[offset] = val.clone();
                 }
                 OpCode::DefineGlobal(ref const_id) => {
-                    let name =
-                        if let Value::String(name) = self.chunk().read_const(*const_id as usize) {
-                            *name
-                        } else {
-                            unreachable!("Constant for the variable name must have been added.");
-                        };
+                    let name = if let Value::Str(name) = self.chunk().read_const(*const_id as usize)
+                    {
+                        *name
+                    } else {
+                        unreachable!("Constant for the variable name must have been added.");
+                    };
                     let val = self.peek(0).clone();
                     self.globals.insert(name, val);
                     self.pop();
                 }
                 OpCode::GetGlobal(ref const_id) => {
                     let name = self.chunk().read_const(*const_id as usize);
-                    if let Value::String(name) = name {
+                    if let Value::Str(name) = name {
                         let val = self
                             .globals
                             .get(&name)
@@ -286,12 +286,12 @@ impl VM {
                     }
                 }
                 OpCode::SetGlobal(ref const_id) => {
-                    let name =
-                        if let Value::String(name) = self.chunk().read_const(*const_id as usize) {
-                            *name
-                        } else {
-                            unreachable!("Constant for the variable name must have been added.");
-                        };
+                    let name = if let Value::Str(name) = self.chunk().read_const(*const_id as usize)
+                    {
+                        *name
+                    } else {
+                        unreachable!("Constant for the variable name must have been added.");
+                    };
 
                     let val = self.peek(0).clone();
                     if !self.globals.contains_key(&name) {
@@ -355,13 +355,29 @@ impl VM {
                         let v1 = self.peek_mut(0);
                         *v1 = Value::Number(n1 + n2);
                     }
-                    (&Value::String(s2), &Value::String(s1)) => {
-                        let mut res = intern::str(s1);
-                        res += intern::str(s2).as_str();
+                    (&Value::Str(s2), &Value::Str(s1)) => {
+                        let res = Rc::from(intern::str(s1) + intern::str(s2).as_str());
                         self.pop();
-
                         let v1 = self.peek_mut(0);
-                        *v1 = Value::String(intern::id(res));
+                        *v1 = Value::String(res);
+                    }
+                    (Value::String(s2), &Value::Str(s1)) => {
+                        let res = Rc::from(intern::str(s1) + s2.as_ref());
+                        self.pop();
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
+                    }
+                    (&Value::Str(s2), Value::String(s1)) => {
+                        let res = Rc::from(s1.as_ref().to_string() + intern::str(s2).as_str());
+                        self.pop();
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
+                    }
+                    (Value::String(s2), Value::String(s1)) => {
+                        let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
+                        self.pop();
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
                     }
                     _ => {
                         return Err(RuntimeError::InvalidOperand(
@@ -467,7 +483,7 @@ impl VM {
         Ok(())
     }
 
-    fn call_native(&mut self, fun: ObjNativeFun, argc: u8) -> Result<(), RuntimeError> {
+    fn call_native(&mut self, fun: NativeFun, argc: u8) -> Result<(), RuntimeError> {
         if argc != fun.arity {
             return Err(RuntimeError::InvalidCall(format!(
                 "Expected {} arguments but got {}",
@@ -492,9 +508,9 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         // NOTE: we push to function only to pop it immediately
         // to accomodate the GC in later chapters
-        self.push(Value::String(intern::id(name)))?;
-        self.push(Value::NativeFun(ObjNativeFun { arity, call }))?;
-        if let Value::String(name) = self.stack[0] {
+        self.push(Value::Str(intern::id(name)))?;
+        self.push(Value::NativeFun(NativeFun { arity, call }))?;
+        if let Value::Str(name) = self.stack[0] {
             self.globals.insert(name, self.stack[1].clone());
         }
         self.pop();

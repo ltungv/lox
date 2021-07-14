@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{intern, Chunk, StringId, Value};
+use crate::{intern, Chunk, StrId, Value};
 
 /// A structure for managing closed-over value
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub struct ObjClosure {
 #[derive(Debug)]
 pub struct ObjFun {
     /// The name of the function
-    pub name: StringId,
+    pub name: StrId,
     /// Number of parameters the function has
     pub arity: u8,
     /// The bytecode chunk of this function
@@ -49,26 +49,5 @@ impl Default for ObjFun {
             arity: 0,
             chunk: Chunk::default(),
         }
-    }
-}
-
-/// A native function
-#[derive(Clone)]
-pub struct ObjNativeFun {
-    /// Number of parameters
-    pub arity: u8,
-    /// Native function reference
-    pub call: fn(&[Value]) -> Value,
-}
-
-impl fmt::Display for ObjNativeFun {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "<native fn>")
-    }
-}
-
-impl fmt::Debug for ObjNativeFun {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "<native fn>")
     }
 }

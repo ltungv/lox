@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StringId, Token, Value,
+    intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StrId, Token, Value,
     MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_UPVALUES,
 };
 
@@ -320,7 +320,7 @@ impl<'a> Compiler<'a> {
             0 // A dummy value used when we're not in the global scope
         } else {
             let name = intern::id(self.previous_token.lexeme);
-            self.make_const(Value::String(name))
+            self.make_const(Value::Str(name))
         }
     }
 
@@ -645,7 +645,7 @@ impl<'a> Compiler<'a> {
         } else if let Some(upval) = self.resolve_upvalue(0, var_name) {
             (OpCode::GetUpvalue(upval), OpCode::SetUpvalue(upval))
         } else {
-            let ident_id = self.make_const(Value::String(var_name));
+            let ident_id = self.make_const(Value::Str(var_name));
             (OpCode::GetGlobal(ident_id), OpCode::SetGlobal(ident_id))
         };
 
@@ -657,7 +657,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn resolve_local(&mut self, level: usize, name: StringId) -> Option<u8> {
+    fn resolve_local(&mut self, level: usize, name: StrId) -> Option<u8> {
         self.level(level)
             .locals
             .iter()
@@ -693,7 +693,7 @@ impl<'a> Compiler<'a> {
         upvalue_count
     }
 
-    fn resolve_upvalue(&mut self, level: usize, name: StringId) -> Option<u8> {
+    fn resolve_upvalue(&mut self, level: usize, name: StrId) -> Option<u8> {
         if self.levels.len() - 1 == level {
             return None;
         }
@@ -710,7 +710,7 @@ impl<'a> Compiler<'a> {
     fn string(&mut self) {
         let value =
             intern::id(&self.previous_token.lexeme[1..self.previous_token.lexeme.len() - 1]);
-        let constant = self.make_const(Value::String(value));
+        let constant = self.make_const(Value::Str(value));
         self.emit(OpCode::Constant(constant));
     }
 
@@ -911,14 +911,14 @@ pub struct Upvalue {
 /// Store name and depth of the resolved identifer.
 #[derive(Debug)]
 struct Local {
-    name: StringId,
+    name: StrId,
     depth: usize,
     initialized: bool,
     captured: bool,
 }
 
-impl From<(StringId, usize)> for Local {
-    fn from((name, depth): (StringId, usize)) -> Self {
+impl From<(StrId, usize)> for Local {
+    fn from((name, depth): (StrId, usize)) -> Self {
         Self {
             name,
             depth,

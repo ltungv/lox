@@ -5,11 +5,11 @@ use string_interner::{symbol::SymbolU32, DefaultBackend, DefaultHashBuilder};
 use crate::MAX_STACK;
 
 /// Default string interner
-pub type StringInterner<B = DefaultBackend<StringId>, H = DefaultHashBuilder> =
-    string_interner::StringInterner<StringId, B, H>;
+pub type StringInterner<B = DefaultBackend<StrId>, H = DefaultHashBuilder> =
+    string_interner::StringInterner<StrId, B, H>;
 
 /// Interned string id
-pub type StringId = SymbolU32;
+pub type StrId = SymbolU32;
 
 // This idea was taken from
 // https://github.com/anellie/cloxrs/blob/main/src/interner.rs
@@ -19,12 +19,12 @@ thread_local! {
 
 /// Intern a string if it has not been allocated by the global interner,
 /// otherwise, returning the existing reference for that string.
-pub fn id<S: AsRef<str>>(s: S) -> StringId {
+pub fn id<S: AsRef<str>>(s: S) -> StrId {
     INTERN.with(|intern| intern.borrow_mut().get_or_intern(s))
 }
 
 /// Get the string reference from the global interner using its id.
-pub fn str(id: StringId) -> String {
+pub fn str(id: StrId) -> String {
     INTERN.with(|intern| {
         intern
             .borrow_mut()

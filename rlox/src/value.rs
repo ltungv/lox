@@ -1,6 +1,6 @@
 use std::{fmt, rc::Rc};
 
-use crate::{intern, ObjClosure, ObjFun, ObjNativeFun, StringId};
+use crate::{intern, ObjClosure, ObjFun, StrId};
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
@@ -11,17 +11,13 @@ pub enum Value {
     Bool(bool),
     /// A number value in Lox
     Number(f64),
+    /// A constant hashed string
+    Str(StrId),
     /// A heap allocated string
-    ///
-    /// # Notes
-    ///
-    /// To improve memory usage, we should separated string into 2 types, one that owns its
-    /// character array and one that is "constant" such that it points to the original source
-    /// or some non-freeable location.
-    String(StringId),
-    /// A native function object
-    NativeFun(ObjNativeFun),
-    /// A function object
+    String(Rc<str>),
+    /// A native function reference
+    NativeFun(NativeFun),
+    /// A closure that can captured surrounding variables
     Closure(Rc<ObjClosure>),
     /// A function object
     Fun(Rc<ObjFun>),
@@ -39,10 +35,11 @@ impl fmt::Display for Value {
                     write!(f, "{:?}", n)
                 }
             }
-            Self::String(id) => write!(f, "{}", intern::str(*id)),
+            Self::Str(s) => write!(f, "{}", intern::str(*s)),
+            Self::String(s) => write!(f, "{}", s.as_ref()),
             Self::Closure(c) => write!(f, "{}", c.fun),
-            Self::Fun(obj) => write!(f, "{}", obj),
-            Self::NativeFun(n) => write!(f, "{}", n),
+            Self::Fun(fun) => write!(f, "{}", fun),
+            Self::NativeFun(fun) => write!(f, "{}", fun),
         }
     }
 }
@@ -64,8 +61,29 @@ impl Value {
             (Self::Nil, Self::Nil) => true,
             (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
             (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
-            (Self::String(s1), Self::String(s2)) => s1 == s2,
+            (Self::Str(s1), Self::Str(s2)) => s1 == s2,
             _ => false,
         }
+    }
+}
+
+/// A native function
+#[derive(Clone)]
+pub struct NativeFun {
+    /// Number of parameters
+    pub arity: u8,
+    /// Native function reference
+    pub call: fn(&[Value]) -> Value,
+}
+
+impl fmt::Display for NativeFun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "<native fn>")
+    }
+}
+
+impl fmt::Debug for NativeFun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "<native fn>")
     }
 }
