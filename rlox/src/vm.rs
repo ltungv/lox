@@ -145,16 +145,11 @@ impl VM {
         let fun = Rc::new(fun);
 
         || -> Result<(), RuntimeError> {
-            // NOTE: we push to function only to pop it immediately
-            // to accomodate the GC in later chapters
-            self.push(Value::Fun(Rc::clone(&fun)))?;
             let closure = Rc::new(ObjClosure {
-                fun: Rc::clone(&fun),
+                fun,
                 upvalues: Vec::new(),
             });
-            self.pop();
             self.push(Value::Closure(Rc::clone(&closure)))?;
-
             self.call(closure, 0)?;
             self.run()
         }()
@@ -506,15 +501,10 @@ impl VM {
         arity: u8,
         call: fn(&[Value]) -> Value,
     ) -> Result<(), RuntimeError> {
-        // NOTE: we push to function only to pop it immediately
-        // to accomodate the GC in later chapters
-        self.push(Value::Str(intern::id(name)))?;
-        self.push(Value::NativeFun(NativeFun { arity, call }))?;
-        if let Value::Str(name) = self.stack[0] {
-            self.globals.insert(name, self.stack[1].clone());
-        }
-        self.pop();
-        self.pop();
+        self.globals.insert(
+            intern::id(name),
+            Value::NativeFun(NativeFun { arity, call }),
+        );
         Ok(())
     }
 
