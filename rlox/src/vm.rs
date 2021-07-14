@@ -212,9 +212,8 @@ impl VM {
                 }
                 OpCode::DefineGlobal(ref const_id) => {
                     if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
-                        let val = self.peek(0).clone();
+                        let val = self.pop();
                         self.globals.insert(name, val);
-                        self.pop();
                     }
                 }
                 OpCode::SetGlobal(ref const_id) => {
