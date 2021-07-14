@@ -126,7 +126,14 @@ impl<'a> Compiler<'a> {
             },
             had_error: false,
             panic: false,
-            levels: vec![Level::new(ObjFun::default(), FunType::Script)],
+            levels: vec![Level::new(
+                ObjFun {
+                    name: intern::id(""),
+                    arity: 0,
+                    chunk: Chunk::default(),
+                },
+                FunType::Script,
+            )],
         }
     }
 

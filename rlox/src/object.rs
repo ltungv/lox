@@ -19,6 +19,11 @@ pub struct ObjClosure {
     /// Upvalues for indirect access to closed-over variables
     pub upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
 }
+impl fmt::Display for ObjClosure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.fun)
+    }
+}
 
 /// A function object that holds the bytecode of the function along with other metadata
 #[derive(Debug)]
@@ -38,16 +43,6 @@ impl fmt::Display for ObjFun {
             write!(f, "<script>")
         } else {
             write!(f, "<fn {}>", name_str)
-        }
-    }
-}
-
-impl Default for ObjFun {
-    fn default() -> Self {
-        Self {
-            name: intern::id(""),
-            arity: 0,
-            chunk: Chunk::default(),
         }
     }
 }
