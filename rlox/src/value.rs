@@ -62,6 +62,9 @@ impl Value {
             (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
             (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
             (Self::Str(s1), Self::Str(s2)) => s1 == s2,
+            (Self::String(s1), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
+            (Self::Str(s1), Self::String(s2)) => intern::str(*s1) == s2.as_ref(),
+            (Self::String(s1), Self::String(s2)) => s1 == s2,
             _ => false,
         }
     }
