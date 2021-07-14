@@ -411,7 +411,11 @@ impl<'a> Compiler<'a> {
             if l.depth <= self.level_current().scope_depth {
                 break;
             }
-            self.emit(OpCode::Pop);
+            if l.captured {
+                self.emit(OpCode::CloseUpvalue);
+            } else {
+                self.emit(OpCode::Pop);
+            }
             self.level_current_mut().locals.pop();
         }
     }
@@ -694,6 +698,7 @@ impl<'a> Compiler<'a> {
             return None;
         }
         if let Some(local) = self.resolve_local(level + 1, name) {
+            self.level_mut(level + 1).locals[local as usize].captured = true;
             return Some(self.add_upvalue(level, local, true) as u8);
         }
         if let Some(upvalue) = self.resolve_upvalue(level + 1, name) {
@@ -879,6 +884,7 @@ impl Level {
             name: intern::id(""),
             depth: 0,
             initialized: false,
+            captured: false,
         });
         Self {
             fun,
@@ -908,6 +914,7 @@ struct Local {
     name: StringId,
     depth: usize,
     initialized: bool,
+    captured: bool,
 }
 
 impl From<(StringId, usize)> for Local {
@@ -916,6 +923,7 @@ impl From<(StringId, usize)> for Local {
             name,
             depth,
             initialized: false,
+            captured: false,
         }
     }
 }

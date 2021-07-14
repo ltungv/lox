@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     intern, Chunk, Compiler, Error, ObjClosure, ObjNativeFun, ObjUpvalue, RuntimeError, StringId,
@@ -53,6 +53,8 @@ pub enum OpCode {
     Return,
     /// Print an expression in human readable format
     Print,
+    /// Move captured value to the heap
+    CloseUpvalue,
     /// Get a variable through its upvalue
     GetUpvalue(u8),
     /// Set a variable through its upvalue
@@ -115,6 +117,7 @@ struct CallFrame {
 pub struct VM {
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
+    open_upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
     globals: HashMap<StringId, Value>,
 }
 
@@ -123,6 +126,7 @@ impl Default for VM {
         let mut vm = Self {
             stack: Vec::with_capacity(MAX_STACK),
             frames: Vec::with_capacity(MAX_FRAMES),
+            open_upvalues: Vec::new(),
             globals: HashMap::default(),
         };
         vm.define_native("clock", 0, clock_native)
@@ -191,7 +195,6 @@ impl VM {
                     self.call_value(self.peek(argc as usize).clone(), argc)?;
                 }
                 OpCode::Closure(fun_idx, upvalues) => {
-                    // TODO: upvalues implementation
                     let fun = if let Value::Fun(fun) = self.chunk().read_const(fun_idx as usize) {
                         Rc::clone(&fun)
                     } else {
@@ -213,6 +216,7 @@ impl VM {
                 }
                 OpCode::Return => {
                     let val = self.pop();
+                    self.close_upvalues(self.frame().slot);
                     let frame = self.frames.pop().expect("Cannot be empty");
                     if self.frames.is_empty() {
                         self.pop();
@@ -227,16 +231,26 @@ impl VM {
                     let v = self.pop();
                     println!("{}", v);
                 }
+                OpCode::CloseUpvalue => {
+                    self.close_upvalues(self.stack.len() - 1);
+                    self.pop();
+                }
                 OpCode::GetUpvalue(ref slot) => {
                     let slot = *slot as usize;
-                    let location = self.frame().closure.upvalues[slot].location;
-                    let value = self.stack[location].clone();
-                    self.push(value.clone())?
+                    let upvalue = self.frame().closure.upvalues[slot].clone();
+                    let value = match &*upvalue.borrow() {
+                        ObjUpvalue::Open(loc) => self.stack[*loc as usize].clone(),
+                        ObjUpvalue::Closed(val) => val.clone(),
+                    };
+                    self.push(value.clone())?;
                 }
                 OpCode::SetUpvalue(ref slot) => {
                     let slot = *slot as usize;
-                    let location = self.frame().closure.upvalues[slot].location;
-                    self.stack[location] = self.peek(0).clone();
+                    let upvalue = self.frame().closure.upvalues[slot].clone();
+                    match &mut *upvalue.borrow_mut() {
+                        ObjUpvalue::Open(loc) => self.stack[*loc as usize] = self.peek(0).clone(),
+                        ObjUpvalue::Closed(val) => *val = self.peek(0).clone(),
+                    };
                 }
                 OpCode::GetLocal(ref slot) => {
                     let local = self.stack[self.frame().slot + *slot as usize].clone();
@@ -405,8 +419,31 @@ impl VM {
         }
     }
 
-    fn capture_upvalue(&mut self, location: usize) -> Rc<ObjUpvalue> {
-        Rc::new(ObjUpvalue { location })
+    fn capture_upvalue(&mut self, location: usize) -> Rc<RefCell<ObjUpvalue>> {
+        for upvalue in self.open_upvalues.iter() {
+            match *upvalue.borrow() {
+                ObjUpvalue::Open(loc) if loc == location => {
+                    return Rc::clone(upvalue);
+                }
+                _ => {}
+            };
+        }
+        let upvalue = Rc::new(RefCell::new(ObjUpvalue::Open(location)));
+        self.open_upvalues.push(Rc::clone(&upvalue));
+        upvalue
+    }
+
+    fn close_upvalues(&mut self, last: usize) {
+        for upvalue in self.open_upvalues.iter() {
+            let (loc, upvalue) = match *upvalue.borrow() {
+                ObjUpvalue::Open(loc) if loc >= last => (loc, upvalue),
+                _ => continue,
+            };
+            upvalue.replace(ObjUpvalue::Closed(self.stack[loc].clone()));
+        }
+        // remove closed upvalues from list of open upvalues
+        self.open_upvalues
+            .retain(|v| matches!(*v.borrow(), ObjUpvalue::Open(_)))
     }
 
     fn call(&mut self, closure: Rc<ObjClosure>, argc: u8) -> Result<(), RuntimeError> {
@@ -511,6 +548,7 @@ impl VM {
     fn reset_stack(&mut self) {
         self.stack.clear();
         self.frames.clear();
+        self.open_upvalues.clear();
     }
 
     /// Print out where execution stop right before the error

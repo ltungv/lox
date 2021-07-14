@@ -124,6 +124,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         }
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Print => println!("OP_PRINT"),
+        OpCode::CloseUpvalue => println!("OP_CLOSE_UPVALUE"),
         OpCode::GetUpvalue(ref idx) => byte_instruction("OP_GET_UPVALUE", *idx),
         OpCode::SetUpvalue(ref idx) => byte_instruction("OP_SET_UPVALUE", *idx),
         OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
