@@ -1,15 +1,17 @@
 # Rlox
 
-A bytecode virtual machine written in Rust for the Lox programming language.
+A bytecode virtual machine written in Rust for the Lox programming language. This implementation uses Rust's reference counted object to manage memory, instead of a mark-and-sweep garbage collector.
 
 ## Implemented challenges
 
 + [x] Do inplace update on the stack for operators that pop a value and push back a value immediately after.
 + [x] Check arity when calling native function
++ [x] Efficient storage for string constants and literals.
+  + String literals are interned and stored in a global interner
+  + Concaternating strings allocated a string object on the heap
 + [ ] Memory efficient encoding for line information.
 + [ ] Dynamic VM' stack size. We already got this from Rust's Vec, but limiting ourself to 256.
 + [ ] Support `OP_CONSTANT_LONG` that takes a 24-bit number to extend the number of constants that can be contained.
-+ [ ] Efficient storage for string constants and literals.
 + [ ] String interpolation.
   ```ruby
   var drink = "Tea";
@@ -35,7 +37,3 @@ A bytecode virtual machine written in Rust for the Lox programming language.
     + If the evaluated value equal to the switch value, execute the statements under the case, then exit the `switch` statement.
     + If no case matches and there is a default case, execute its statements.
 + [ ] `continue`/`break` statement in loop.
-
-## Addtional features
-
-+ [x] Report error at line number and column number.
