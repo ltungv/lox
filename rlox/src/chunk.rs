@@ -106,6 +106,8 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
 
     match chunk.instructions[idx] {
         OpCode::Pop => println!("OP_POP"),
+        OpCode::Print => println!("OP_PRINT"),
+        OpCode::Return => println!("OP_RETURN"),
         OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", idx, *offset, false),
         OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, true),
         OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, true),
@@ -122,8 +124,7 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
                 )
             }
         }
-        OpCode::Return => println!("OP_RETURN"),
-        OpCode::Print => println!("OP_PRINT"),
+        OpCode::Class(ref const_id) => constant_instruction("OP_CLASS", *const_id),
         OpCode::CloseUpvalue => println!("OP_CLOSE_UPVALUE"),
         OpCode::GetUpvalue(ref idx) => byte_instruction("OP_GET_UPVALUE", *idx),
         OpCode::SetUpvalue(ref idx) => byte_instruction("OP_SET_UPVALUE", *idx),

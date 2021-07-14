@@ -18,6 +18,17 @@ pub struct Token<'l> {
     pub pos: Position,
 }
 
+impl<'l> Token<'l> {
+    /// Create a token of type Eof with position set to the default value
+    pub fn placeholder() -> Self {
+        Self {
+            typ: Type::Eof,
+            lexeme: "",
+            pos: Position::default(),
+        }
+    }
+}
+
 /// Lox token types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {

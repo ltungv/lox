@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, NativeFun, ObjClosure, ObjUpvalue, RuntimeError, StrId,
-    Upvalue, Value, MAX_FRAMES, MAX_STACK,
+    intern, Chunk, Compiler, Error, NativeFun, ObjClass, ObjClosure, ObjUpvalue, RuntimeError,
+    StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
@@ -37,38 +37,6 @@ fn print_stack(stack: &[Value]) {
 /// [IEEE 754]: https://en.wikipedia.org/wiki/IEEE_754
 #[derive(Debug, Clone)]
 pub enum OpCode {
-    /// Pop the top of the stack
-    Pop,
-    /// Jump backward for n instructions
-    Loop(u16),
-    /// Jump forward for n instructions
-    Jump(u16),
-    /// Jump forward for n instructions if current stack top is falsey
-    JumpIfFalse(u16),
-    /// Make a function call
-    Call(u8),
-    /// Add a new closure
-    Closure(u8, Vec<Upvalue>),
-    /// Return from the current function
-    Return,
-    /// Print an expression in human readable format
-    Print,
-    /// Move captured value to the heap
-    CloseUpvalue,
-    /// Get a variable through its upvalue
-    GetUpvalue(u8),
-    /// Set a variable through its upvalue
-    SetUpvalue(u8),
-    /// Set the value of a global variable
-    GetLocal(u8),
-    /// Set the value of a local variable
-    SetLocal(u8),
-    /// Pop the top of the stack and define a variable initialized with that value.
-    DefineGlobal(u8),
-    /// Get the value of a global variable
-    GetGlobal(u8),
-    /// Set the value of a global variable
-    SetGlobal(u8),
     /// Load a constant
     Constant(u8),
     /// Load a `nil` value
@@ -77,10 +45,24 @@ pub enum OpCode {
     True,
     /// Load a `false` value
     False,
-    /// Apply logical `not` to a single boolean operand
-    Not,
-    /// Negate a single number operand
-    Negate,
+    /// Pop the top of the stack
+    Pop,
+
+    /// Set the value of a global variable
+    GetLocal(u8),
+    /// Set the value of a local variable
+    SetLocal(u8),
+    /// Get the value of a global variable
+    GetGlobal(u8),
+    /// Pop the top of the stack and define a variable initialized with that value.
+    DefineGlobal(u8),
+    /// Set the value of a global variable
+    SetGlobal(u8),
+    /// Get a variable through its upvalue
+    GetUpvalue(u8),
+    /// Set a variable through its upvalue
+    SetUpvalue(u8),
+
     /// Check for equality between 2 operands.
     Equal,
     /// Compare if the first operand is greater than the second
@@ -95,6 +77,31 @@ pub enum OpCode {
     Multiply,
     /// Divide two number operands
     Divide,
+    /// Apply logical `not` to a single boolean operand
+    Not,
+    /// Negate a single number operand
+    Negate,
+
+    /// Print an expression in human readable format
+    Print,
+    /// Jump forward for n instructions
+    Jump(u16),
+    /// Jump forward for n instructions if current stack top is falsey
+    JumpIfFalse(u16),
+    /// Jump backward for n instructions
+    Loop(u16),
+
+    /// Make a function call
+    Call(u8),
+    /// Add a new closure
+    Closure(u8, Vec<Upvalue>),
+    /// Move captured value to the heap
+    CloseUpvalue,
+    /// Return from the current function
+    Return,
+
+    /// Create a class and bind it to a name,
+    Class(u8),
 }
 
 fn clock_native(_args: &[Value]) -> Value {
@@ -145,10 +152,7 @@ impl VM {
         let fun = Rc::new(fun);
 
         || -> Result<(), RuntimeError> {
-            let closure = Rc::new(ObjClosure {
-                fun,
-                upvalues: Vec::new(),
-            });
+            let closure = Rc::new(ObjClosure::new(fun, Vec::new()));
             self.push(Value::Closure(Rc::clone(&closure)))?;
             self.call(closure, 0)?;
             self.run()
@@ -172,80 +176,15 @@ impl VM {
 
             let opcode = self.next_instruction().clone();
             match opcode {
-                OpCode::Pop => {
-                    self.pop();
-                }
-                OpCode::Loop(offset) => {
-                    self.frame_mut().ip -= offset as usize;
-                }
-                OpCode::Jump(offset) => {
-                    self.frame_mut().ip += offset as usize;
-                }
-                OpCode::JumpIfFalse(offset) => {
-                    if self.peek(0).is_falsey() {
-                        self.frame_mut().ip += offset as usize;
-                    }
-                }
-                OpCode::Call(argc) => {
-                    self.call_value(self.peek(argc as usize).clone(), argc)?;
-                }
-                OpCode::Closure(fun_idx, upvalues) => {
-                    let fun = if let Value::Fun(fun) = self.chunk().read_const(fun_idx as usize) {
-                        Rc::clone(&fun)
-                    } else {
-                        unreachable!("Value must be a function object");
-                    };
-
-                    let upvalues = upvalues.iter().map(|upvalue| {
-                        if upvalue.is_local {
-                            self.capture_upvalue(self.frame().slot + upvalue.index as usize)
-                        } else {
-                            Rc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
-                        }
-                    });
-                    let closure = Rc::new(ObjClosure {
-                        fun,
-                        upvalues: upvalues.collect(),
-                    });
-                    self.push(Value::Closure(closure))?;
-                }
-                OpCode::Return => {
-                    let val = self.pop();
-                    self.close_upvalues(self.frame().slot);
-                    let frame = self.frames.pop().expect("Cannot be empty");
-                    if self.frames.is_empty() {
-                        self.pop();
-                        return Ok(());
-                    }
-                    while self.stack.len() != frame.slot {
-                        self.pop();
-                    }
+                OpCode::Constant(ref const_id) => {
+                    let val = self.chunk().read_const(*const_id as usize).clone();
                     self.push(val)?;
                 }
-                OpCode::Print => {
-                    let v = self.pop();
-                    println!("{}", v);
-                }
-                OpCode::CloseUpvalue => {
-                    self.close_upvalues(self.stack.len() - 1);
+                OpCode::Nil => self.push(Value::Nil)?,
+                OpCode::True => self.push(Value::Bool(true))?,
+                OpCode::False => self.push(Value::Bool(false))?,
+                OpCode::Pop => {
                     self.pop();
-                }
-                OpCode::GetUpvalue(ref slot) => {
-                    let slot = *slot as usize;
-                    let upvalue = self.frame().closure.upvalues[slot].clone();
-                    let value = match &*upvalue.borrow() {
-                        ObjUpvalue::Open(loc) => self.stack[*loc as usize].clone(),
-                        ObjUpvalue::Closed(val) => val.clone(),
-                    };
-                    self.push(value.clone())?;
-                }
-                OpCode::SetUpvalue(ref slot) => {
-                    let slot = *slot as usize;
-                    let upvalue = self.frame().closure.upvalues[slot].clone();
-                    match &mut *upvalue.borrow_mut() {
-                        ObjUpvalue::Open(loc) => self.stack[*loc as usize] = self.peek(0).clone(),
-                        ObjUpvalue::Closed(val) => *val = self.peek(0).clone(),
-                    };
                 }
                 OpCode::GetLocal(ref slot) => {
                     let local = self.stack[self.frame().slot + *slot as usize].clone();
@@ -256,17 +195,6 @@ impl VM {
                     let offset = self.frame().slot + *slot as usize;
                     self.stack[offset] = val.clone();
                 }
-                OpCode::DefineGlobal(ref const_id) => {
-                    let name = if let Value::Str(name) = self.chunk().read_const(*const_id as usize)
-                    {
-                        *name
-                    } else {
-                        unreachable!("Constant for the variable name must have been added.");
-                    };
-                    let val = self.peek(0).clone();
-                    self.globals.insert(name, val);
-                    self.pop();
-                }
                 OpCode::GetGlobal(ref const_id) => {
                     let name = self.chunk().read_const(*const_id as usize);
                     if let Value::Str(name) = name {
@@ -276,31 +204,124 @@ impl VM {
                             .ok_or_else(|| RuntimeError::UndefinedVariable(intern::str(*name)))?
                             .clone();
                         self.push(val)?;
-                    } else {
-                        unreachable!("Constant for the variable name must have been added.");
+                    }
+                }
+                OpCode::DefineGlobal(ref const_id) => {
+                    if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
+                        let val = self.peek(0).clone();
+                        self.globals.insert(name, val);
+                        self.pop();
                     }
                 }
                 OpCode::SetGlobal(ref const_id) => {
-                    let name = if let Value::Str(name) = self.chunk().read_const(*const_id as usize)
-                    {
-                        *name
-                    } else {
-                        unreachable!("Constant for the variable name must have been added.");
+                    if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
+                        let val = self.peek(0).clone();
+                        if !self.globals.contains_key(&name) {
+                            return Err(RuntimeError::UndefinedVariable(intern::str(name)));
+                        }
+                        self.globals.insert(name, val);
                     };
-
-                    let val = self.peek(0).clone();
-                    if !self.globals.contains_key(&name) {
-                        return Err(RuntimeError::UndefinedVariable(intern::str(name)));
+                }
+                OpCode::GetUpvalue(ref slot) => {
+                    let slot = *slot as usize;
+                    let upvalue = self.frame().closure.upvalues[slot].clone();
+                    let value = match &*upvalue.borrow() {
+                        ObjUpvalue::Open(loc) => self.stack[*loc as usize].clone(),
+                        ObjUpvalue::Closed(val) => val.clone(),
+                    };
+                    self.push(value)?;
+                }
+                OpCode::SetUpvalue(ref slot) => {
+                    let value = self.peek(0).clone();
+                    let slot = *slot as usize;
+                    let upvalue = self.frame().closure.upvalues[slot].clone();
+                    match &mut *upvalue.borrow_mut() {
+                        ObjUpvalue::Open(loc) => self.stack[*loc as usize] = value,
+                        ObjUpvalue::Closed(val) => *val = value,
+                    };
+                }
+                OpCode::Equal => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = Value::Bool(v1.equal(&v2));
+                }
+                OpCode::Greater => match (self.pop(), self.peek(0)) {
+                    (Value::Number(n2), &Value::Number(n1)) => {
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::Bool(n1 > n2);
                     }
-                    self.globals.insert(name, val);
-                }
-                OpCode::Constant(ref const_id) => {
-                    let val = self.chunk().read_const(*const_id as usize).clone();
-                    self.push(val)?;
-                }
-                OpCode::Nil => self.push(Value::Nil)?,
-                OpCode::True => self.push(Value::Bool(true))?,
-                OpCode::False => self.push(Value::Bool(false))?,
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            "Operands must be numbers".to_string(),
+                        ))
+                    }
+                },
+                OpCode::Less => match (self.pop(), self.peek(0)) {
+                    (Value::Number(n2), &Value::Number(n1)) => {
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::Bool(n1 < n2);
+                    }
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            "Operands must be numbers".to_string(),
+                        ))
+                    }
+                },
+                OpCode::Add => match (self.pop(), self.peek(0)) {
+                    (Value::Number(n2), &Value::Number(n1)) => {
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::Number(n1 + n2);
+                    }
+                    (Value::Str(s2), Value::Str(s1)) => {
+                        let res = Rc::from(intern::str(*s1) + intern::str(s2).as_str());
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
+                    }
+                    (Value::String(s2), &Value::Str(s1)) => {
+                        let res = Rc::from(intern::str(s1) + s2.as_ref());
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
+                    }
+                    (Value::Str(s2), Value::String(s1)) => {
+                        let res = Rc::from(s1.as_ref().to_string() + intern::str(s2).as_str());
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
+                    }
+                    (Value::String(s2), Value::String(s1)) => {
+                        let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
+                        let v1 = self.peek_mut(0);
+                        *v1 = Value::String(res);
+                    }
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            "Operands must be two numbers or two strings".to_string(),
+                        ))
+                    }
+                },
+                OpCode::Subtract => match (self.pop(), self.peek_mut(0)) {
+                    (Value::Number(n2), Value::Number(n1)) => *n1 -= n2,
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            "Operands must be numbers".to_string(),
+                        ))
+                    }
+                },
+                OpCode::Multiply => match (self.pop(), self.peek_mut(0)) {
+                    (Value::Number(n2), Value::Number(n1)) => *n1 *= n2,
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            "Operands must be numbers".to_string(),
+                        ))
+                    }
+                },
+                OpCode::Divide => match (self.pop(), self.peek_mut(0)) {
+                    (Value::Number(n2), Value::Number(n1)) => *n1 /= n2,
+                    _ => {
+                        return Err(RuntimeError::InvalidOperand(
+                            "Operands must be numbers".to_string(),
+                        ))
+                    }
+                },
                 OpCode::Not => {
                     let v = self.peek_mut(0);
                     *v = Value::Bool(v.is_falsey());
@@ -315,107 +336,61 @@ impl VM {
                         ))
                     }
                 },
-                OpCode::Equal => {
-                    let v2 = self.pop();
-                    let v1 = self.peek_mut(0);
-                    *v1 = Value::Bool(v1.equal(&v2));
+                OpCode::Print => {
+                    let v = self.pop();
+                    println!("{}", v);
                 }
-                OpCode::Greater => match (self.peek(0), self.peek(1)) {
-                    (&Value::Number(n2), &Value::Number(n1)) => {
+                OpCode::Jump(offset) => {
+                    self.frame_mut().ip += offset as usize;
+                }
+                OpCode::JumpIfFalse(offset) => {
+                    if self.peek(0).is_falsey() {
+                        self.frame_mut().ip += offset as usize;
+                    }
+                }
+                OpCode::Loop(offset) => {
+                    self.frame_mut().ip -= offset as usize;
+                }
+                OpCode::Call(argc) => {
+                    self.call_value(self.peek(argc as usize).clone(), argc)?;
+                }
+                OpCode::Closure(fun_idx, upvalues) => {
+                    if let Value::Fun(fun) = self.chunk().read_const(fun_idx as usize) {
+                        let fun = Rc::clone(fun);
+                        let upvalues = upvalues.iter().map(|upvalue| {
+                            if upvalue.is_local {
+                                self.capture_upvalue(self.frame().slot + upvalue.index as usize)
+                            } else {
+                                Rc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
+                            }
+                        });
+                        let closure = Rc::new(ObjClosure::new(fun, upvalues.collect()));
+                        self.push(Value::Closure(closure))?;
+                    };
+                }
+                OpCode::CloseUpvalue => {
+                    self.close_upvalues(self.stack.len() - 1);
+                    self.pop();
+                }
+                OpCode::Return => {
+                    let val = self.pop();
+                    self.close_upvalues(self.frame().slot);
+                    let frame = self.frames.pop().expect("Cannot be empty");
+                    if self.frames.is_empty() {
                         self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Bool(n1 > n2);
+                        return Ok(());
                     }
-                    _ => {
-                        return Err(RuntimeError::InvalidOperand(
-                            "Operands must be numbers".to_string(),
-                        ))
-                    }
-                },
-                OpCode::Less => match (self.peek(0), self.peek(1)) {
-                    (&Value::Number(n2), &Value::Number(n1)) => {
+                    while self.stack.len() != frame.slot {
                         self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Bool(n1 < n2);
                     }
-                    _ => {
-                        return Err(RuntimeError::InvalidOperand(
-                            "Operands must be numbers".to_string(),
-                        ))
+                    self.push(val)?;
+                }
+                OpCode::Class(ref const_id) => {
+                    if let Value::Str(name) = self.chunk().read_const(*const_id as usize) {
+                        let class = Rc::new(ObjClass::new(*name));
+                        self.push(Value::Class(class))?;
                     }
-                },
-                OpCode::Add => match (self.peek(0), self.peek(1)) {
-                    (&Value::Number(n2), &Value::Number(n1)) => {
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Number(n1 + n2);
-                    }
-                    (&Value::Str(s2), &Value::Str(s1)) => {
-                        let res = Rc::from(intern::str(s1) + intern::str(s2).as_str());
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    (Value::String(s2), &Value::Str(s1)) => {
-                        let res = Rc::from(intern::str(s1) + s2.as_ref());
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    (&Value::Str(s2), Value::String(s1)) => {
-                        let res = Rc::from(s1.as_ref().to_string() + intern::str(s2).as_str());
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    (Value::String(s2), Value::String(s1)) => {
-                        let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    _ => {
-                        return Err(RuntimeError::InvalidOperand(
-                            "Operands must be two numbers or two strings".to_string(),
-                        ))
-                    }
-                },
-                OpCode::Subtract => match (self.peek(0), self.peek(1)) {
-                    (&Value::Number(n2), &Value::Number(n1)) => {
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Number(n1 - n2);
-                    }
-                    _ => {
-                        return Err(RuntimeError::InvalidOperand(
-                            "Operands must be numbers".to_string(),
-                        ))
-                    }
-                },
-                OpCode::Multiply => match (self.peek(0), self.peek(1)) {
-                    (&Value::Number(n2), &Value::Number(n1)) => {
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Number(n1 * n2);
-                    }
-                    _ => {
-                        return Err(RuntimeError::InvalidOperand(
-                            "Operands must be numbers".to_string(),
-                        ))
-                    }
-                },
-                OpCode::Divide => match (self.peek(0), self.peek(1)) {
-                    (&Value::Number(n2), &Value::Number(n1)) => {
-                        self.pop();
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Number(n1 / n2);
-                    }
-                    _ => {
-                        return Err(RuntimeError::InvalidOperand(
-                            "Operands must be numbers".to_string(),
-                        ))
-                    }
-                },
+                }
             }
         }
     }
@@ -432,12 +407,11 @@ impl VM {
 
     fn capture_upvalue(&mut self, location: usize) -> Rc<RefCell<ObjUpvalue>> {
         for upvalue in self.open_upvalues.iter() {
-            match *upvalue.borrow() {
-                ObjUpvalue::Open(loc) if loc == location => {
+            if let ObjUpvalue::Open(loc) = *upvalue.borrow() {
+                if loc == location {
                     return Rc::clone(upvalue);
                 }
-                _ => {}
-            };
+            }
         }
         let upvalue = Rc::new(RefCell::new(ObjUpvalue::Open(location)));
         self.open_upvalues.push(Rc::clone(&upvalue));
@@ -446,11 +420,14 @@ impl VM {
 
     fn close_upvalues(&mut self, last: usize) {
         for upvalue in self.open_upvalues.iter() {
-            let (loc, upvalue) = match *upvalue.borrow() {
-                ObjUpvalue::Open(loc) if loc >= last => (loc, upvalue),
-                _ => continue,
+            let loc = if let ObjUpvalue::Open(loc) = *upvalue.borrow() {
+                loc
+            } else {
+                continue;
             };
-            upvalue.replace(ObjUpvalue::Closed(self.stack[loc].clone()));
+            if loc >= last {
+                upvalue.replace(ObjUpvalue::Closed(self.stack[loc].clone()));
+            }
         }
         // remove closed upvalues from list of open upvalues
         self.open_upvalues

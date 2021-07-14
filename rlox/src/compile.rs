@@ -114,26 +114,11 @@ impl<'a> Compiler<'a> {
     pub fn new(src: &'a str) -> Self {
         Self {
             scanner: Scanner::new(src),
-            current_token: Token {
-                typ: token::Type::Eof,
-                lexeme: "",
-                pos: Position::default(),
-            },
-            previous_token: Token {
-                typ: token::Type::Eof,
-                lexeme: "",
-                pos: Position::default(),
-            },
+            current_token: Token::placeholder(),
+            previous_token: Token::placeholder(),
             had_error: false,
             panic: false,
-            levels: vec![Level::new(
-                ObjFun {
-                    name: intern::id(""),
-                    arity: 0,
-                    chunk: Chunk::default(),
-                },
-                FunType::Script,
-            )],
+            levels: vec![Level::new(ObjFun::new(intern::id("")), FunType::Script)],
         }
     }
 
@@ -235,7 +220,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.match_type(token::Type::Fun) {
+        if self.match_type(token::Type::Class) {
+            self.class_declaration()
+        } else if self.match_type(token::Type::Fun) {
             self.fun_declaration()
         } else if self.match_type(token::Type::Var) {
             self.var_declaration()
@@ -257,14 +244,7 @@ impl<'a> Compiler<'a> {
 
     fn function(&mut self, fun_t: FunType) {
         let name = intern::id(self.previous_token.lexeme);
-        self.levels.push(Level::new(
-            ObjFun {
-                name,
-                arity: 0,
-                chunk: Chunk::default(),
-            },
-            fun_t,
-        ));
+        self.levels.push(Level::new(ObjFun::new(name), fun_t));
         self.begin_scope();
 
         self.consume(token::Type::LParen, "Expect '(' after function name");
@@ -298,6 +278,18 @@ impl<'a> Compiler<'a> {
         let fun = Rc::new(fun);
         let const_id = self.make_const(Value::Fun(fun));
         self.emit(OpCode::Closure(const_id, upvalues));
+    }
+
+    fn class_declaration(&mut self) {
+        self.consume(token::Type::Ident, "Expect class name");
+        let name_constant = self.identifier_constant();
+        self.declare_variable();
+
+        self.emit(OpCode::Class(name_constant));
+        self.define_variable(name_constant);
+
+        self.consume(token::Type::LBrace, "Expect '{' before class body");
+        self.consume(token::Type::RBrace, "Expect '}' after class body");
     }
 
     fn var_declaration(&mut self) {
@@ -670,13 +662,13 @@ impl<'a> Compiler<'a> {
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, l)| l.name == name)
-            .map(|(i, l)| (i as u8, l.initialized))
-            .map(|(i, init)| {
-                if !init {
+            .find(|(_, local)| local.name == name)
+            .map(|(const_id, local)| (const_id as u8, local.initialized))
+            .map(|(const_id, is_init)| {
+                if !is_init {
                     self.error("Can't read local variable in its own initializer");
                 }
-                i
+                const_id
             })
     }
 

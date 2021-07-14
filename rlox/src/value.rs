@@ -1,6 +1,6 @@
 use std::{fmt, rc::Rc};
 
-use crate::{intern, ObjClosure, ObjFun, StrId};
+use crate::{intern, ObjClass, ObjClosure, ObjFun, StrId};
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
@@ -21,6 +21,8 @@ pub enum Value {
     Closure(Rc<ObjClosure>),
     /// A function object
     Fun(Rc<ObjFun>),
+    /// A class object
+    Class(Rc<ObjClass>),
 }
 
 impl fmt::Display for Value {
@@ -36,10 +38,11 @@ impl fmt::Display for Value {
                 }
             }
             Self::Str(s) => write!(f, "{}", intern::str(*s)),
-            Self::String(s) => write!(f, "{}", s.as_ref()),
-            Self::Closure(c) => write!(f, "{}", c.fun),
-            Self::Fun(fun) => write!(f, "{}", fun),
+            Self::String(s) => write!(f, "{}", s),
             Self::NativeFun(fun) => write!(f, "{}", fun),
+            Self::Closure(c) => write!(f, "{}", c),
+            Self::Fun(fun) => write!(f, "{}", fun),
+            Self::Class(c) => write!(f, "{}", c),
         }
     }
 }
