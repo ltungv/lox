@@ -41,4 +41,3 @@ pub const MAX_CHUNK_CONSTANTS: usize = 256;
 
 /// Maximum number of upvalues a closure can have
 pub const MAX_UPVALUES: usize = 256;
-

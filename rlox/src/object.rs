@@ -21,6 +21,12 @@ impl ObjInstance {
     }
 }
 
+impl fmt::Display for ObjInstance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{} instance", intern::str(self.class.name))
+    }
+}
+
 /// A structure for holding class information
 #[derive(Debug)]
 pub struct ObjClass {

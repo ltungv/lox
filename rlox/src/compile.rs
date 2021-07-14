@@ -311,16 +311,16 @@ impl<'a> Compiler<'a> {
     fn parse_variable(&mut self) -> u8 {
         self.consume(token::Type::Ident, "Expect variable name");
         self.declare_variable();
-        self.identifier_constant()
-    }
-
-    fn identifier_constant(&mut self) -> u8 {
         if self.level_current().scope_depth > 0 {
             0 // A dummy value used when we're not in the global scope
         } else {
-            let name = intern::id(self.previous_token.lexeme);
-            self.make_const(Value::Str(name))
+            self.identifier_constant()
         }
+    }
+
+    fn identifier_constant(&mut self) -> u8 {
+        let name = intern::id(self.previous_token.lexeme);
+        self.make_const(Value::Str(name))
     }
 
     fn declare_variable(&mut self) {
@@ -637,6 +637,18 @@ impl<'a> Compiler<'a> {
         arg_count as u8
     }
 
+    fn dot(&mut self, can_assign: bool) {
+        self.consume(token::Type::Ident, "Expect property name after '.'");
+        let name = self.identifier_constant();
+
+        if can_assign && self.match_type(token::Type::Equal) {
+            self.expression();
+            self.emit(OpCode::SetProperty(name))
+        } else {
+            self.emit(OpCode::GetProperty(name))
+        }
+    }
+
     fn variable(&mut self, can_assign: bool) {
         let var_name = intern::id(self.previous_token.lexeme);
         let (op_get, op_set) = if let Some(local) = self.resolve_local(0, var_name) {
@@ -742,7 +754,7 @@ impl<'a> Compiler<'a> {
 
         while precedence <= Precedence::of(self.current_token.typ) {
             self.advance();
-            self.infix_rule();
+            self.infix_rule(can_assign);
         }
 
         if can_assign && self.match_type(token::Type::Equal) {
@@ -764,8 +776,9 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn infix_rule(&mut self) {
+    fn infix_rule(&mut self, can_assign: bool) {
         match self.previous_token.typ {
+            token::Type::Dot => self.dot(can_assign),
             token::Type::LParen => self.call(),
             token::Type::Or => self.or(),
             token::Type::And => self.and(),
@@ -879,12 +892,7 @@ impl Level {
     fn new(fun: ObjFun, fun_t: FunType) -> Self {
         // The first slot on the stack is reserved for the callframe
         let mut locals = Vec::with_capacity(MAX_LOCAL_VARIABLES);
-        locals.push(Local {
-            name: intern::id(""),
-            depth: 0,
-            initialized: false,
-            captured: false,
-        });
+        locals.push(Local::from((intern::id(""), 0)));
         Self {
             fun,
             fun_t,
@@ -987,7 +995,7 @@ impl Precedence {
             | token::Type::LessEqual => Precedence::Comparison,
             token::Type::Minus | token::Type::Plus => Precedence::Term,
             token::Type::Slash | token::Type::Star => Precedence::Factor,
-            token::Type::LParen => Precedence::Call,
+            token::Type::LParen | token::Type::Dot => Precedence::Call,
             _ => Self::None,
         }
     }

@@ -1,4 +1,4 @@
-use crate::{Position,OpCode,Value};
+use crate::{OpCode, Position, Value};
 
 /// A chunk holds a sequence of instructions to be executes and their data
 ///
@@ -77,12 +77,12 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
 
 /// Display an instruction in human readable format.
 #[cfg(debug_assertions)]
-pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
-    print!("{:04} ", idx);
-    if idx > 0 && chunk.positions[idx].line == chunk.positions[idx - 1].line {
+pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
+    print!("{:04} ", inst_idx);
+    if inst_idx > 0 && chunk.positions[inst_idx].line == chunk.positions[inst_idx - 1].line {
         print!("   | ");
     } else {
-        print!("{:4} ", chunk.positions[idx].line);
+        print!("{:4} ", chunk.positions[inst_idx].line);
     }
 
     let constant_instruction = |op_repr: &str, const_id: u8| {
@@ -104,41 +104,21 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         println!("{:-16} {:4} -> {}", op_repr, jump, jump_target);
     };
 
-    match chunk.instructions[idx] {
-        OpCode::Pop => println!("OP_POP"),
-        OpCode::Print => println!("OP_PRINT"),
-        OpCode::Return => println!("OP_RETURN"),
-        OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", idx, *offset, false),
-        OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", idx, *offset, true),
-        OpCode::JumpIfFalse(ref offset) => jump_instruction("OP_JUMP_IF_FALSE", idx, *offset, true),
-        OpCode::Call(ref idx) => byte_instruction("OP_CALL", *idx),
-        OpCode::Closure(ref constant, ref upvalues) => {
-            let value = chunk.read_const(idx as usize);
-            println!("{:-16} {:4} {}", "OP_CLOSURE", constant, value);
-            for upvalue in upvalues {
-                println!(
-                    "{:04}      |                     {} {}",
-                    idx,
-                    if upvalue.is_local { "local" } else { "upvalue" },
-                    upvalue.index,
-                )
-            }
-        }
-        OpCode::Class(ref const_id) => constant_instruction("OP_CLASS", *const_id),
-        OpCode::CloseUpvalue => println!("OP_CLOSE_UPVALUE"),
-        OpCode::GetUpvalue(ref idx) => byte_instruction("OP_GET_UPVALUE", *idx),
-        OpCode::SetUpvalue(ref idx) => byte_instruction("OP_SET_UPVALUE", *idx),
-        OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
-        OpCode::SetLocal(ref slot) => byte_instruction("OP_SET_LOCAL", *slot),
-        OpCode::DefineGlobal(ref const_id) => constant_instruction("OP_DEFINE_GLOBAL", *const_id),
-        OpCode::GetGlobal(ref const_id) => constant_instruction("OP_GET_GLOBAL", *const_id),
-        OpCode::SetGlobal(ref const_id) => constant_instruction("OP_SET_GLOBAL", *const_id),
+    match chunk.instructions[inst_idx] {
         OpCode::Constant(ref const_id) => constant_instruction("OP_CONSTANT", *const_id),
         OpCode::Nil => println!("OP_NIL"),
         OpCode::True => println!("OP_TRUE"),
         OpCode::False => println!("OP_FALSE"),
-        OpCode::Not => println!("OP_NOT"),
-        OpCode::Negate => println!("OP_NEGATE"),
+        OpCode::Pop => println!("OP_POP"),
+        OpCode::GetLocal(ref slot) => byte_instruction("OP_GET_LOCAL", *slot),
+        OpCode::SetLocal(ref slot) => byte_instruction("OP_SET_LOCAL", *slot),
+        OpCode::GetGlobal(ref const_id) => constant_instruction("OP_GET_GLOBAL", *const_id),
+        OpCode::DefineGlobal(ref const_id) => constant_instruction("OP_DEFINE_GLOBAL", *const_id),
+        OpCode::SetGlobal(ref const_id) => constant_instruction("OP_SET_GLOBAL", *const_id),
+        OpCode::GetUpvalue(ref idx) => byte_instruction("OP_GET_UPVALUE", *idx),
+        OpCode::SetUpvalue(ref idx) => byte_instruction("OP_SET_UPVALUE", *idx),
+        OpCode::GetProperty(ref const_id) => constant_instruction("OP_GET_PROPERTY", *const_id),
+        OpCode::SetProperty(ref const_id) => constant_instruction("OP_SET_PROPERTY", *const_id),
         OpCode::Equal => println!("OP_EQUAL"),
         OpCode::Greater => println!("OP_GREATER"),
         OpCode::Less => println!("OP_LESS"),
@@ -146,5 +126,29 @@ pub fn disassemble_instruction(chunk: &Chunk, idx: usize) {
         OpCode::Subtract => println!("OP_SUBTRACT"),
         OpCode::Multiply => println!("OP_MULTIPLY"),
         OpCode::Divide => println!("OP_DIVIDE"),
+        OpCode::Not => println!("OP_NOT"),
+        OpCode::Negate => println!("OP_NEGATE"),
+        OpCode::Jump(ref offset) => jump_instruction("OP_JUMP", inst_idx, *offset, true),
+        OpCode::JumpIfFalse(ref offset) => {
+            jump_instruction("OP_JUMP_IF_FALSE", inst_idx, *offset, true)
+        }
+        OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", inst_idx, *offset, false),
+        OpCode::Print => println!("OP_PRINT"),
+        OpCode::Call(ref idx) => byte_instruction("OP_CALL", *idx),
+        OpCode::Closure(ref const_id, ref upvalues) => {
+            let value = chunk.read_const(*const_id as usize);
+            println!("{:-16} {:4} {}", "OP_CLOSURE", const_id, value);
+            for upvalue in upvalues {
+                println!(
+                    "{:04}      |                     {} {}",
+                    inst_idx,
+                    if upvalue.is_local { "local" } else { "upvalue" },
+                    upvalue.index,
+                )
+            }
+        }
+        OpCode::CloseUpvalue => println!("OP_CLOSE_UPVALUE"),
+        OpCode::Return => println!("OP_RETURN"),
+        OpCode::Class(ref const_id) => constant_instruction("OP_CLASS", *const_id),
     }
 }

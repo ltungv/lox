@@ -13,16 +13,7 @@ pub enum Error {
 
 /// Virtual machine errors
 #[derive(Debug)]
-pub enum RuntimeError {
-    /// Push on an full stack
-    StackOverflow,
-    /// Make call on unsupported object
-    InvalidCall(String),
-    /// Operand(s) given to an opcode is invalid
-    InvalidOperand(String),
-    /// Accessing an undefined variable
-    UndefinedVariable(String),
-}
+pub struct RuntimeError(pub String);
 
 /// Error while scanning Lox source code
 #[derive(Debug, Clone)]
@@ -46,20 +37,24 @@ impl fmt::Display for Error {
 impl std::error::Error for RuntimeError {}
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::StackOverflow => {
-                write!(f, "Stack overflow.")
-            }
-            Self::InvalidCall(ref msg) => {
-                write!(f, "{}.", msg)
-            }
-            Self::InvalidOperand(ref msg) => {
-                write!(f, "{}.", msg)
-            }
-            Self::UndefinedVariable(ref name) => {
-                write!(f, "Undefined variable '{}'.", name)
-            }
-        }
+        write!(f, "{}", self.0)
+        // match self {
+        //     Self::StackOverflow => {
+        //         write!(f, "Stack overflow.")
+        //     }
+        //     Self::InvalidCall(ref msg) => {
+        //         write!(f, "{}.", msg)
+        //     }
+        //     Self::InvalidOperand(ref msg) => {
+        //         write!(f, "{}.", msg)
+        //     }
+        //     Self::UndefinedVariable(ref name) => {
+        //         write!(f, "Undefined variable '{}'.", name)
+        //     }
+        //     Self::UndefinedProperty(ref name) => {
+        //         write!(f, "Undefined variable '{}'.", name)
+        //     }
+        // }
     }
 }
 
