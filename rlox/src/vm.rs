@@ -1,3 +1,4 @@
+use std::ops::{Add, Div, Mul, Neg, Not, Sub};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
@@ -305,59 +306,34 @@ impl VM {
                     }
                     _ => return Err(RuntimeError("Operands must be numbers".to_string())),
                 },
-                OpCode::Add => match (self.pop(), self.peek(0)) {
-                    (Value::Number(n2), &Value::Number(n1)) => {
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Number(n1 + n2);
-                    }
-                    (Value::Str(s2), Value::Str(s1)) => {
-                        let res = Rc::from(intern::str(*s1) + intern::str(s2).as_str());
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    (Value::String(s2), &Value::Str(s1)) => {
-                        let res = Rc::from(intern::str(s1) + s2.as_ref());
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    (Value::Str(s2), Value::String(s1)) => {
-                        let res = Rc::from(s1.as_ref().to_string() + intern::str(s2).as_str());
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    (Value::String(s2), Value::String(s1)) => {
-                        let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::String(res);
-                    }
-                    _ => {
-                        return Err(RuntimeError(
-                            "Operands must be two numbers or two strings".to_string(),
-                        ))
-                    }
-                },
-                OpCode::Subtract => match (self.pop(), self.peek_mut(0)) {
-                    (Value::Number(n2), Value::Number(n1)) => *n1 -= n2,
-                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
-                },
-                OpCode::Multiply => match (self.pop(), self.peek_mut(0)) {
-                    (Value::Number(n2), Value::Number(n1)) => *n1 *= n2,
-                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
-                },
-                OpCode::Divide => match (self.pop(), self.peek_mut(0)) {
-                    (Value::Number(n2), Value::Number(n1)) => *n1 /= n2,
-                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
-                },
+                OpCode::Add => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = v1.add(&v2)?;
+                }
+                OpCode::Subtract => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = v1.sub(&v2)?;
+                }
+                OpCode::Multiply => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = v1.mul(&v2)?;
+                }
+                OpCode::Divide => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = v1.div(&v2)?;
+                }
                 OpCode::Not => {
                     let v = self.peek_mut(0);
-                    *v = Value::Bool(v.is_falsey());
+                    *v = v.not();
                 }
-                OpCode::Negate => match self.peek_mut(0) {
-                    Value::Number(v) => {
-                        *v = -*v;
-                    }
-                    _ => return Err(RuntimeError("Operand must be a number".to_string())),
-                },
+                OpCode::Negate => {
+                    let v = self.peek_mut(0);
+                    *v = v.neg()?;
+                }
                 OpCode::Print => {
                     let v = self.pop();
                     println!("{}", v);
@@ -366,7 +342,7 @@ impl VM {
                     self.frame_mut().ip += *offset as usize;
                 }
                 OpCode::JumpIfFalse(ref offset) => {
-                    if self.peek(0).is_falsey() {
+                    if self.peek(0).not().as_bool() {
                         self.frame_mut().ip += *offset as usize;
                     }
                 }

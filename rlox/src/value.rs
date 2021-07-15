@@ -1,6 +1,9 @@
+use std::ops;
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{intern, ObjBoundMethod, ObjClass, ObjClosure, ObjFun, ObjInstance, StrId};
+use crate::{
+    intern, ObjBoundMethod, ObjClass, ObjClosure, ObjFun, ObjInstance, RuntimeError, StrId,
+};
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
@@ -53,16 +56,131 @@ impl fmt::Display for Value {
     }
 }
 
-impl Value {
-    /// Return true if the value is `nil` or `false`. Otherwise, return false.
-    pub fn is_falsey(&self) -> bool {
+impl ops::Add for &Value {
+    type Output = Result<Value, RuntimeError>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
+            (Value::Str(s1), Value::Str(s2)) => {
+                let res = Rc::from(intern::str(*s1) + intern::str(*s2).as_str());
+                Ok(Value::String(res))
+            }
+            (Value::String(s1), Value::Str(s2)) => {
+                let res = Rc::from(s1.as_ref().to_string() + intern::str(*s2).as_str());
+                Ok(Value::String(res))
+            }
+            (Value::Str(s1), Value::String(s2)) => {
+                let res = Rc::from(intern::str(*s1) + s2.as_ref());
+                Ok(Value::String(res))
+            }
+            (Value::String(s1), Value::String(s2)) => {
+                let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
+                Ok(Value::String(res))
+            }
+            _ => Err(RuntimeError(
+                "Operands must be two numbers or two strings".to_string(),
+            )),
+        }
+    }
+}
+
+impl ops::Sub for &Value {
+    type Output = Result<Value, RuntimeError>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 - n2)),
+            _ => Err(RuntimeError("Operands must be numbers".to_string())),
+        }
+    }
+}
+
+impl ops::Mul for &Value {
+    type Output = Result<Value, RuntimeError>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 * n2)),
+            _ => Err(RuntimeError("Operands must be numbers".to_string())),
+        }
+    }
+}
+
+impl ops::Div for &Value {
+    type Output = Result<Value, RuntimeError>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 / n2)),
+            _ => Err(RuntimeError("Operands must be numbers".to_string())),
+        }
+    }
+}
+
+impl ops::Not for &Value {
+    type Output = Value;
+
+    fn not(self) -> Self::Output {
+        Value::Bool(match self {
+            Value::Bool(b) => !b,
+            Value::Nil => true,
+            _ => false,
+        })
+    }
+}
+
+impl ops::Neg for &Value {
+    type Output = Result<Value, RuntimeError>;
+
+    fn neg(self) -> Self::Output {
         match self {
-            Self::Bool(b) => !b,
-            Self::Nil => true,
+            Value::Number(n) => Ok(Value::Number(-n)),
+            _ => Err(RuntimeError("Operand must be a number".to_string())),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Nil, Self::Nil) => true,
+            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
+            (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
+            (Self::Str(s1), Self::Str(s2)) => s1 == s2,
+            (Self::String(s1), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
+            (Self::Str(s1), Self::String(s2)) => intern::str(*s1) == s2.as_ref(),
+            (Self::String(s1), Self::String(s2)) => s1 == s2,
+            (Self::NativeFun(f1), Self::NativeFun(f2)) => f1.name == f2.name,
+            (Self::Closure(c1), Self::Closure(c2)) => Rc::ptr_eq(c1, c2),
+            (Self::Fun(f1), Self::Fun(f2)) => Rc::ptr_eq(f1, f2),
+            (Self::Class(c1), Self::Class(c2)) => Rc::ptr_eq(c1, c2),
+            (Self::Instance(i1), Self::Instance(i2)) => {
+                let i1 = i1.borrow();
+                let i2 = i2.borrow();
+                if !Rc::ptr_eq(&i1.class, &i2.class) {
+                    return false;
+                }
+                if i1.fields.len() != i2.fields.len() {
+                    return false;
+                }
+                for k in i1.fields.keys() {
+                    if !i2.fields.contains_key(k) {
+                        return false;
+                    }
+                    if !i1.fields[k].equal(&i2.fields[k]) {
+                        return false;
+                    }
+                }
+                true
+            }
+            (Self::BoundMethod(b1), Self::BoundMethod(b2)) => Rc::ptr_eq(b1, b2),
             _ => false,
         }
     }
+}
 
+impl Value {
     /// Check for equality between two values of the same type. If the operands are of different
     /// types, return `false`.
     pub fn equal(&self, other: &Value) -> bool {
@@ -99,6 +217,15 @@ impl Value {
             }
             (Self::BoundMethod(b1), Self::BoundMethod(b2)) => Rc::ptr_eq(b1, b2),
             _ => false,
+        }
+    }
+
+    /// Cast the value as a boolean
+    pub fn as_bool(&self) -> bool {
+        if let Value::Bool(bool) = self {
+            *bool
+        } else {
+            panic!("Invalid cast")
         }
     }
 
