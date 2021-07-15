@@ -26,7 +26,7 @@ pub enum Value {
     /// A class instance
     Instance(Rc<RefCell<ObjInstance>>),
     /// A class instance
-    BoundMethod(Rc<RefCell<ObjBoundMethod>>),
+    BoundMethod(Rc<ObjBoundMethod>),
 }
 
 impl fmt::Display for Value {
@@ -48,7 +48,7 @@ impl fmt::Display for Value {
             Self::Fun(fun) => write!(f, "{}", fun),
             Self::Class(c) => write!(f, "{}", c.borrow()),
             Self::Instance(i) => write!(f, "{}", i.borrow()),
-            Self::BoundMethod(m) => write!(f, "{}", m.borrow()),
+            Self::BoundMethod(m) => write!(f, "{}", m),
         }
     }
 }

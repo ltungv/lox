@@ -127,6 +127,7 @@ pub struct VM {
     frames: Vec<CallFrame>,
     open_upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
     globals: HashMap<StrId, Value>,
+    init_string: StrId,
 }
 
 impl Default for VM {
@@ -136,6 +137,7 @@ impl Default for VM {
             frames: Vec::with_capacity(MAX_FRAMES),
             open_upvalues: Vec::new(),
             globals: HashMap::default(),
+            init_string: intern::id("init"),
         };
         vm.define_native("clock", 0, clock_native)
             .expect("Unreachable.");
@@ -419,7 +421,7 @@ impl VM {
             Value::Closure(c) => self.call_closure(c, argc),
             Value::NativeFun(f) => self.call_native(f, argc),
             Value::Class(c) => self.call_class(c, argc),
-            Value::BoundMethod(m) => self.call_closure(Rc::clone(&m.borrow().method), argc),
+            Value::BoundMethod(m) => self.call_bound_method(Rc::clone(&m), argc),
             _ => Err(RuntimeError(
                 "Can only call functions and classes.".to_string(),
             )),
@@ -508,8 +510,25 @@ impl VM {
 
     fn call_class(&mut self, class: Rc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
         *self.peek_mut(argc as usize) =
-            Value::Instance(Rc::new(RefCell::new(ObjInstance::new(class))));
+            Value::Instance(Rc::new(RefCell::new(ObjInstance::new(Rc::clone(&class)))));
+        if let Some(Value::Closure(initializer)) = class.borrow().methods.get(&self.init_string) {
+            return self.call_closure(Rc::clone(initializer), argc);
+        } else if argc != 0 {
+            return Err(RuntimeError(format!(
+                "Expected 0 arguments but got {}",
+                argc
+            )));
+        }
         Ok(())
+    }
+
+    fn call_bound_method(
+        &mut self,
+        bound: Rc<ObjBoundMethod>,
+        argc: u8,
+    ) -> Result<(), RuntimeError> {
+        *self.peek_mut(argc as usize) = bound.receiver.clone();
+        self.call_closure(Rc::clone(&bound.method), argc)
     }
 
     fn define_method(&mut self, name: StrId) {
@@ -527,10 +546,10 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         match instance.borrow().class.borrow().methods.get(&name) {
             Some(Value::Closure(method)) => {
-                let bound = Rc::new(RefCell::new(ObjBoundMethod::new(
+                let bound = Rc::new(ObjBoundMethod::new(
                     Value::Instance(Rc::clone(&instance)),
                     Rc::clone(method),
-                )));
+                ));
                 self.push(Value::BoundMethod(bound))?;
                 Ok(())
             }

@@ -14,6 +14,10 @@ use crate::disassemble_chunk;
 /// We are treating the entire script as a implicit function.
 #[derive(Debug, PartialEq, Eq)]
 pub enum FunType {
+    /// The compiled chunk is of a class initializer
+    Initializer,
+    /// The compiled chunk is of a class method
+    Method,
     /// The compiled chunk is of a function
     Function,
     /// The compiled chunk is of the input script
@@ -106,7 +110,8 @@ pub struct Compiler<'a> {
     panic: bool,
     // Avoid having a linked list of compiler, solution found from
     // https://github.com/tdp2110/crafting-interpreters-rs/blob/trunk/src/compiler.rs
-    levels: Vec<Level>,
+    closure_levels: Vec<ClosureLevel>,
+    class_levels: Vec<ClassLevel>,
 }
 
 impl<'a> Compiler<'a> {
@@ -118,7 +123,11 @@ impl<'a> Compiler<'a> {
             previous_token: Token::placeholder(),
             had_error: false,
             panic: false,
-            levels: vec![Level::new(ObjFun::new(intern::id("")), FunType::Script)],
+            closure_levels: vec![ClosureLevel::new(
+                ObjFun::new(intern::id("")),
+                FunType::Script,
+            )],
+            class_levels: Vec::new(),
         }
     }
 
@@ -149,30 +158,30 @@ impl<'a> Compiler<'a> {
         &mut self.level_current_mut().fun.chunk
     }
 
-    fn level_pop(&mut self) -> Level {
-        self.levels.pop().expect("Wrong compiler state.")
+    fn level_pop(&mut self) -> ClosureLevel {
+        self.closure_levels.pop().expect("Wrong compiler state.")
     }
 
-    fn level(&self, lvl: usize) -> &Level {
+    fn level(&self, lvl: usize) -> &ClosureLevel {
         // last item contains the chunk that is currently written to
         // level 0 --> current
         // level 1 --> enclosing
         // level 2 --> enlosing of enclosing
         // level 3 --> so on...
-        let idx = self.levels.len() - lvl - 1;
-        &self.levels[idx]
+        let idx = self.closure_levels.len() - lvl - 1;
+        &self.closure_levels[idx]
     }
 
-    fn level_mut(&mut self, lvl: usize) -> &mut Level {
-        let idx = self.levels.len() - lvl - 1;
-        &mut self.levels[idx]
+    fn level_mut(&mut self, lvl: usize) -> &mut ClosureLevel {
+        let idx = self.closure_levels.len() - lvl - 1;
+        &mut self.closure_levels[idx]
     }
 
-    fn level_current(&self) -> &Level {
+    fn level_current(&self) -> &ClosureLevel {
         self.level(0)
     }
 
-    fn level_current_mut(&mut self) -> &mut Level {
+    fn level_current_mut(&mut self) -> &mut ClosureLevel {
         self.level_mut(0)
     }
 
@@ -191,7 +200,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_return(&mut self) {
-        self.emit(OpCode::Nil);
+        if self.level_current().fun_t == FunType::Initializer {
+            // A class initializer always return the instance, which locates
+            // at the start of the call frame
+            self.emit(OpCode::GetLocal(0));
+        } else {
+            self.emit(OpCode::Nil);
+        }
         self.emit(OpCode::Return);
     }
 
@@ -244,7 +259,8 @@ impl<'a> Compiler<'a> {
 
     fn function(&mut self, fun_t: FunType) {
         let name = intern::id(self.previous_token.lexeme);
-        self.levels.push(Level::new(ObjFun::new(name), fun_t));
+        self.closure_levels
+            .push(ClosureLevel::new(ObjFun::new(name), fun_t));
         self.begin_scope();
 
         self.consume(token::Type::LParen, "Expect '(' after function name");
@@ -289,6 +305,7 @@ impl<'a> Compiler<'a> {
 
         self.emit(OpCode::Class(name_constant));
         self.define_variable(name_constant);
+        self.class_levels.push(ClassLevel {});
 
         self.named_variable(class_name, false);
         self.consume(token::Type::LBrace, "Expect '{' before class body");
@@ -297,13 +314,21 @@ impl<'a> Compiler<'a> {
         }
         self.consume(token::Type::RBrace, "Expect '}' after class body");
         self.emit(OpCode::Pop);
+        self.class_levels.pop();
     }
 
     fn method(&mut self) {
         self.consume(token::Type::Ident, "Expect method name");
         let const_id = self.identifier_constant();
 
-        self.function(FunType::Function);
+        // The method that's named "init" is the class initializer and it always
+        // return a class instance when finishes.
+
+        self.function(if self.previous_token.lexeme == "init" {
+            FunType::Initializer
+        } else {
+            FunType::Method
+        });
         self.emit(OpCode::Method(const_id));
     }
 
@@ -442,6 +467,9 @@ impl<'a> Compiler<'a> {
         if self.match_type(token::Type::Semicolon) {
             self.emit_return();
         } else {
+            if self.level_current().fun_t == FunType::Initializer {
+                self.error("Can't return a value from an initializer");
+            }
             self.expression();
             self.consume(token::Type::Semicolon, "Expect ';' after return value");
             self.emit(OpCode::Return);
@@ -664,6 +692,15 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn this(&mut self) {
+        if self.class_levels.is_empty() {
+            self.error("Can't use 'this' outside of a class");
+            return;
+        }
+        // This is bound to the lexical scope as a normal local variable
+        self.variable(false);
+    }
+
     fn variable(&mut self, can_assign: bool) {
         let var_name = intern::id(self.previous_token.lexeme);
         self.named_variable(var_name, can_assign)
@@ -724,7 +761,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_upvalue(&mut self, level: usize, name: StrId) -> Option<u8> {
-        if self.levels.len() - 1 == level {
+        if self.closure_levels.len() - 1 == level {
             return None;
         }
         if let Some(local) = self.resolve_local(level + 1, name) {
@@ -785,6 +822,7 @@ impl<'a> Compiler<'a> {
         match self.previous_token.typ {
             token::Type::LParen => self.grouping(),
             token::Type::Minus | token::Type::Bang => self.unary(),
+            token::Type::This => self.this(),
             token::Type::Ident => self.variable(can_assign),
             token::Type::String => self.string(),
             token::Type::Number => self.number(),
@@ -899,7 +937,10 @@ impl<'a> Compiler<'a> {
 }
 
 #[derive(Debug)]
-struct Level {
+struct ClassLevel {}
+
+#[derive(Debug)]
+struct ClosureLevel {
     fun: ObjFun,
     fun_t: FunType,
     locals: Vec<Local>,
@@ -907,11 +948,19 @@ struct Level {
     scope_depth: usize,
 }
 
-impl Level {
+impl ClosureLevel {
     fn new(fun: ObjFun, fun_t: FunType) -> Self {
         // The first slot on the stack is reserved for the callframe
+        // + With function call, the slot stores a function object that is being called
+        // + With method call, the slot stores the receiver of the method
         let mut locals = Vec::with_capacity(MAX_LOCAL_VARIABLES);
-        locals.push(Local::from((intern::id(""), 0)));
+
+        if fun_t != FunType::Function {
+            locals.push(Local::from((intern::id("this"), 0, true)));
+        } else {
+            locals.push(Local::from((intern::id(""), 0, true)));
+        }
+
         Self {
             fun,
             fun_t,
@@ -949,6 +998,16 @@ impl From<(StrId, usize)> for Local {
             name,
             depth,
             initialized: false,
+            captured: false,
+        }
+    }
+}
+impl From<(StrId, usize, bool)> for Local {
+    fn from((name, depth, initialized): (StrId, usize, bool)) -> Self {
+        Self {
+            name,
+            depth,
+            initialized,
             captured: false,
         }
     }
