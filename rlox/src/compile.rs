@@ -373,7 +373,7 @@ impl<'a> Compiler<'a> {
 
         let name = intern::id(self.previous_token.lexeme);
         let mut name_duplicated = false;
-        for l in self.level_current().locals.iter() {
+        for l in self.level_current().locals.iter().rev() {
             if l.initialized && l.depth < self.level_current().scope_depth {
                 break;
             }
@@ -687,7 +687,7 @@ impl<'a> Compiler<'a> {
         if can_assign && self.match_type(token::Type::Equal) {
             self.expression();
             self.emit(OpCode::SetProperty(name))
-        } else if self.match_type(token::Type::Equal) {
+        } else if self.match_type(token::Type::LParen) {
             // directly invoke a method
             let argc = self.argument_list();
             self.emit(OpCode::Invoke(name, argc))

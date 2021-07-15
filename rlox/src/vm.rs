@@ -376,7 +376,6 @@ impl VM {
                     match *self.chunk().read_const(*const_id as usize) {
                         Value::Str(name) => {
                             self.invoke(name, *argc)?;
-                            self.frames.pop();
                         }
                         _ => unreachable! {},
                     }
@@ -428,11 +427,19 @@ impl VM {
     }
 
     fn invoke(&mut self, name: StrId, argc: u8) -> Result<(), RuntimeError> {
-        let class = match self.peek(argc as usize) {
-            Value::Instance(receiver) => Rc::clone(&receiver.borrow().class),
-            _ => return Err(RuntimeError("Only instances have method.".to_string())),
+        let receiver = if let Value::Instance(r) = self.peek(argc as usize) {
+            Rc::clone(r)
+        } else {
+            unreachable!();
         };
-        self.invoke_from_class(class, name, argc)
+
+        let receiver = receiver.borrow();
+        if let Some(value) = receiver.fields.get(&name) {
+            *self.peek_mut(argc as usize) = value.clone();
+            self.call_value(value.clone(), argc)
+        } else {
+            self.invoke_from_class(Rc::clone(&receiver.class), name, argc)
+        }
     }
 
     fn invoke_from_class(
@@ -552,7 +559,7 @@ impl VM {
             return self.call_closure(Rc::clone(initializer), argc);
         } else if argc != 0 {
             return Err(RuntimeError(format!(
-                "Expected 0 arguments but got {}",
+                "Expected 0 arguments but got {}.",
                 argc
             )));
         }
