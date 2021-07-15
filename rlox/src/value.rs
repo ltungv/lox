@@ -101,6 +101,15 @@ impl Value {
             _ => false,
         }
     }
+
+    /// Cast the value as a constant string
+    pub fn as_str(&self) -> &StrId {
+        if let Value::Str(str) = self {
+            str
+        } else {
+            panic!("Invalid cast")
+        }
+    }
 }
 
 /// A native function

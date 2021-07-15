@@ -206,35 +206,31 @@ impl VM {
                     self.stack[offset] = val.clone();
                 }
                 OpCode::GetGlobal(ref const_id) => {
-                    let name = self.chunk().read_const(*const_id as usize);
-                    if let Value::Str(name) = name {
-                        let val = self
-                            .globals
-                            .get(&name)
-                            .ok_or_else(|| {
-                                RuntimeError(format!("Undefined variable '{}'", intern::str(*name)))
-                            })?
-                            .clone();
-                        self.push(val)?;
-                    }
+                    let name = self.chunk().read_const(*const_id as usize).as_str();
+                    let val = self
+                        .globals
+                        .get(name)
+                        .ok_or_else(|| {
+                            RuntimeError(format!("Undefined variable '{}'", intern::str(*name)))
+                        })?
+                        .clone();
+                    self.push(val)?;
                 }
                 OpCode::DefineGlobal(ref const_id) => {
-                    if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
-                        let val = self.pop();
-                        self.globals.insert(name, val);
-                    }
+                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    let val = self.pop();
+                    self.globals.insert(name, val);
                 }
                 OpCode::SetGlobal(ref const_id) => {
-                    if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
-                        let val = self.peek(0).clone();
-                        if !self.globals.contains_key(&name) {
-                            return Err(RuntimeError(format!(
-                                "Undefined variable '{}'",
-                                intern::str(name)
-                            )));
-                        }
-                        self.globals.insert(name, val);
-                    };
+                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    let val = self.peek(0).clone();
+                    if !self.globals.contains_key(&name) {
+                        return Err(RuntimeError(format!(
+                            "Undefined variable '{}'",
+                            intern::str(name)
+                        )));
+                    }
+                    self.globals.insert(name, val);
                 }
                 OpCode::GetUpvalue(ref slot) => {
                     let slot = *slot as usize;
@@ -257,15 +253,13 @@ impl VM {
                 OpCode::GetProperty(ref const_id) => match self.peek(0) {
                     Value::Instance(instance) => {
                         let instance = Rc::clone(instance);
-                        if let Value::Str(prop_name) = *self.chunk().read_const(*const_id as usize)
-                        {
-                            if let Some(val) = instance.borrow().fields.get(&prop_name) {
-                                self.pop();
-                                self.push(val.clone())?;
-                            } else {
-                                self.bind_method(Rc::clone(&instance.borrow().class), prop_name)?
-                            };
-                        }
+                        let prop_name = *self.chunk().read_const(*const_id as usize).as_str();
+                        if let Some(val) = instance.borrow().fields.get(&prop_name) {
+                            self.pop();
+                            self.push(val.clone())?;
+                        } else {
+                            self.bind_method(Rc::clone(&instance.borrow().class), prop_name)?
+                        };
                     }
                     _ => return Err(RuntimeError("Only instances have properties".to_string())),
                 },
@@ -273,25 +267,23 @@ impl VM {
                     let value = self.pop();
                     match self.pop() {
                         Value::Instance(instance) => {
-                            if let Value::Str(prop_name) =
-                                self.chunk().read_const(*const_id as usize)
-                            {
-                                instance
-                                    .borrow_mut()
-                                    .fields
-                                    .insert(*prop_name, value.clone());
-                                self.push(value)?;
-                            }
+                            let prop_name = *self.chunk().read_const(*const_id as usize).as_str();
+                            instance
+                                .borrow_mut()
+                                .fields
+                                .insert(prop_name, value.clone());
+                            self.push(value)?;
                         }
                         _ => return Err(RuntimeError("Only instances have fields".to_string())),
                     }
                 }
                 OpCode::GetSuper(ref const_id) => {
-                    match (self.pop(), self.chunk().read_const(*const_id as usize)) {
-                        (Value::Class(superclass), &Value::Str(name)) => {
+                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    match self.pop() {
+                        Value::Class(superclass) => {
                             self.bind_method(superclass, name)?;
                         }
-                        (_, _) => unreachable!(),
+                        _ => unreachable!(),
                     }
                 }
                 OpCode::Equal => {
@@ -385,16 +377,13 @@ impl VM {
                     self.call_value(self.peek(*argc as usize).clone(), *argc)?;
                 }
                 OpCode::Invoke(ref const_id, ref argc) => {
-                    match *self.chunk().read_const(*const_id as usize) {
-                        Value::Str(name) => {
-                            self.invoke(name, *argc)?;
-                        }
-                        _ => unreachable! {},
-                    }
+                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    self.invoke(name, *argc)?;
                 }
                 OpCode::SuperInvoke(ref const_id, ref argc) => {
-                    match (self.pop(), self.chunk().read_const(*const_id as usize)) {
-                        (Value::Class(superclass), &Value::Str(method)) => {
+                    let method = *self.chunk().read_const(*const_id as usize).as_str();
+                    match self.pop() {
+                        Value::Class(superclass) => {
                             self.invoke_from_class(superclass, method, *argc)?;
                         }
                         _ => unreachable! {},
@@ -432,10 +421,9 @@ impl VM {
                     self.push(val)?;
                 }
                 OpCode::Class(ref const_id) => {
-                    if let Value::Str(name) = self.chunk().read_const(*const_id as usize) {
-                        let class = Rc::new(RefCell::new(ObjClass::new(*name)));
-                        self.push(Value::Class(class))?;
-                    }
+                    let name = self.chunk().read_const(*const_id as usize).as_str();
+                    let class = Rc::new(RefCell::new(ObjClass::new(*name)));
+                    self.push(Value::Class(class))?;
                 }
                 OpCode::Inherit => {
                     let (subclass, superclass) = match (self.pop(), self.peek(0)) {
@@ -458,9 +446,8 @@ impl VM {
                     );
                 }
                 OpCode::Method(ref const_id) => {
-                    if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
-                        self.define_method(name);
-                    }
+                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    self.define_method(name);
                 }
             }
         }
