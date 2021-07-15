@@ -188,7 +188,7 @@ impl VM {
             let opcode = self.next_instruction().clone();
             match opcode {
                 OpCode::Constant(ref const_id) => {
-                    let val = self.chunk().read_const(*const_id as usize).clone();
+                    let val = self.read_const(*const_id as usize).clone();
                     self.push(val)?;
                 }
                 OpCode::Nil => self.push(Value::Nil)?,
@@ -207,7 +207,7 @@ impl VM {
                     self.stack[offset] = val.clone();
                 }
                 OpCode::GetGlobal(ref const_id) => {
-                    let name = self.chunk().read_const(*const_id as usize).as_str();
+                    let name = self.read_const(*const_id as usize).as_str();
                     let val = self
                         .globals
                         .get(name)
@@ -218,12 +218,12 @@ impl VM {
                     self.push(val)?;
                 }
                 OpCode::DefineGlobal(ref const_id) => {
-                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    let name = *self.read_const(*const_id as usize).as_str();
                     let val = self.pop();
                     self.globals.insert(name, val);
                 }
                 OpCode::SetGlobal(ref const_id) => {
-                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    let name = *self.read_const(*const_id as usize).as_str();
                     let val = self.peek(0).clone();
                     if !self.globals.contains_key(&name) {
                         return Err(RuntimeError(format!(
@@ -251,41 +251,39 @@ impl VM {
                         ObjUpvalue::Closed(val) => *val = value,
                     };
                 }
-                OpCode::GetProperty(ref const_id) => match self.peek(0) {
-                    Value::Instance(instance) => {
-                        let instance = Rc::clone(instance);
-                        let prop_name = *self.chunk().read_const(*const_id as usize).as_str();
-                        if let Some(val) = instance.borrow().fields.get(&prop_name) {
+                OpCode::GetProperty(ref const_id) => {
+                    let instance = self.peek(0);
+                    if !instance.is_instance() {
+                        return Err(RuntimeError("Only instances have properties".to_string()));
+                    }
+                    let instance = Rc::clone(instance.as_instance());
+                    let prop_name = *self.read_const(*const_id as usize).as_str();
+                    match instance.borrow().fields.get(&prop_name) {
+                        Some(val) => {
                             self.pop();
                             self.push(val.clone())?;
-                        } else {
-                            self.bind_method(Rc::clone(&instance.borrow().class), prop_name)?
-                        };
-                    }
-                    _ => return Err(RuntimeError("Only instances have properties".to_string())),
-                },
+                        }
+                        None => self.bind_method(Rc::clone(&instance.borrow().class), prop_name)?,
+                    };
+                }
                 OpCode::SetProperty(ref const_id) => {
                     let value = self.pop();
-                    match self.pop() {
-                        Value::Instance(instance) => {
-                            let prop_name = *self.chunk().read_const(*const_id as usize).as_str();
-                            instance
-                                .borrow_mut()
-                                .fields
-                                .insert(prop_name, value.clone());
-                            self.push(value)?;
-                        }
-                        _ => return Err(RuntimeError("Only instances have fields".to_string())),
+                    let instance = self.pop();
+                    if !instance.is_instance() {
+                        return Err(RuntimeError("Only instances have fields".to_string()));
                     }
+                    let prop_name = *self.read_const(*const_id as usize).as_str();
+                    instance
+                        .as_instance()
+                        .borrow_mut()
+                        .fields
+                        .insert(prop_name, value.clone());
+                    self.push(value)?;
                 }
                 OpCode::GetSuper(ref const_id) => {
-                    let name = *self.chunk().read_const(*const_id as usize).as_str();
-                    match self.pop() {
-                        Value::Class(superclass) => {
-                            self.bind_method(superclass, name)?;
-                        }
-                        _ => unreachable!(),
-                    }
+                    let name = *self.read_const(*const_id as usize).as_str();
+                    let superclass = self.pop();
+                    self.bind_method(Rc::clone(superclass.as_class()), name)?;
                 }
                 OpCode::Equal => {
                     let v2 = self.pop();
@@ -349,31 +347,25 @@ impl VM {
                     self.call_value(self.peek(*argc as usize).clone(), *argc)?;
                 }
                 OpCode::Invoke(ref const_id, ref argc) => {
-                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    let name = *self.read_const(*const_id as usize).as_str();
                     self.invoke(name, *argc)?;
                 }
                 OpCode::SuperInvoke(ref const_id, ref argc) => {
-                    let method = *self.chunk().read_const(*const_id as usize).as_str();
-                    match self.pop() {
-                        Value::Class(superclass) => {
-                            self.invoke_from_class(superclass, method, *argc)?;
-                        }
-                        _ => unreachable! {},
-                    }
+                    let method = *self.read_const(*const_id as usize).as_str();
+                    let superclass = self.pop();
+                    self.invoke_from_class(Rc::clone(superclass.as_class()), method, *argc)?;
                 }
                 OpCode::Closure(ref fun_idx, ref upvalues) => {
-                    if let Value::Fun(fun) = self.chunk().read_const(*fun_idx as usize) {
-                        let fun = Rc::clone(fun);
-                        let upvalues = upvalues.iter().map(|upvalue| {
-                            if upvalue.is_local {
-                                self.capture_upvalue(self.frame().slot + upvalue.index as usize)
-                            } else {
-                                Rc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
-                            }
-                        });
-                        let closure = Rc::new(ObjClosure::new(fun, upvalues.collect()));
-                        self.push(Value::Closure(closure))?;
-                    };
+                    let fun = Rc::clone(self.read_const(*fun_idx as usize).as_fun());
+                    let upvalues = upvalues.iter().map(|upvalue| {
+                        if upvalue.is_local {
+                            self.capture_upvalue(self.frame().slot + upvalue.index as usize)
+                        } else {
+                            Rc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
+                        }
+                    });
+                    let closure = Rc::new(ObjClosure::new(fun, upvalues.collect()));
+                    self.push(Value::Closure(closure))?;
                 }
                 OpCode::CloseUpvalue => {
                     self.close_upvalues(self.stack.len() - 1);
@@ -393,23 +385,22 @@ impl VM {
                     self.push(val)?;
                 }
                 OpCode::Class(ref const_id) => {
-                    let name = self.chunk().read_const(*const_id as usize).as_str();
+                    let name = self.read_const(*const_id as usize).as_str();
                     let class = Rc::new(RefCell::new(ObjClass::new(*name)));
                     self.push(Value::Class(class))?;
                 }
                 OpCode::Inherit => {
-                    let (subclass, superclass) = match (self.pop(), self.peek(0)) {
-                        (Value::Class(sub), Value::Class(sup)) => (sub, Rc::clone(sup)),
-                        (Value::Class(_), _) => {
-                            return Err(RuntimeError("Superclass must be a class".to_string()))
-                        }
-                        (_, _) => unreachable!(),
+                    let subclass = self.pop();
+                    let superclass = if self.peek(0).is_class() {
+                        Rc::clone(self.peek(0).as_class())
+                    } else {
+                        return Err(RuntimeError("Superclass must be a class".to_string()));
                     };
                     // Upon inheritance, we copy all method references from the superclass
                     // to the subclass. This technique does not work in languages that support
                     // "monkey patching" lik Python or Ruby, where user can change the behaviors
                     // of a class at runtme.
-                    subclass.borrow_mut().methods.extend(
+                    subclass.as_class().borrow_mut().methods.extend(
                         superclass
                             .borrow()
                             .methods
@@ -418,7 +409,7 @@ impl VM {
                     );
                 }
                 OpCode::Method(ref const_id) => {
-                    let name = *self.chunk().read_const(*const_id as usize).as_str();
+                    let name = *self.read_const(*const_id as usize).as_str();
                     self.define_method(name);
                 }
             }
@@ -426,18 +417,15 @@ impl VM {
     }
 
     fn invoke(&mut self, name: StrId, argc: u8) -> Result<(), RuntimeError> {
-        let receiver = if let Value::Instance(r) = self.peek(argc as usize) {
-            Rc::clone(r)
-        } else {
-            unreachable!();
-        };
-
+        let receiver = Rc::clone(self.peek(argc as usize).as_instance());
         let receiver = receiver.borrow();
-        if let Some(value) = receiver.fields.get(&name) {
-            *self.peek_mut(argc as usize) = value.clone();
-            self.call_value(value.clone(), argc)
-        } else {
-            self.invoke_from_class(Rc::clone(&receiver.class), name, argc)
+
+        match receiver.fields.get(&name) {
+            Some(value) => {
+                *self.peek_mut(argc as usize) = value.clone();
+                self.call_value(value.clone(), argc)
+            }
+            None => self.invoke_from_class(Rc::clone(&receiver.class), name, argc),
         }
     }
 
@@ -447,15 +435,12 @@ impl VM {
         name: StrId,
         argc: u8,
     ) -> Result<(), RuntimeError> {
-        let method = match class.borrow().methods.get(&name) {
-            Some(Value::Closure(c)) => Rc::clone(c),
-            _ => {
-                return Err(RuntimeError(format!(
-                    "Undefined property '{}'",
-                    intern::str(name)
-                )))
-            }
-        };
+        let class = class.borrow();
+        let method = class.methods.get(&name).ok_or(RuntimeError(format!(
+            "Undefined property '{}'",
+            intern::str(name)
+        )))?;
+        let method = Rc::clone(method.as_closure());
         self.call_closure(method, argc)
     }
 
@@ -547,15 +532,15 @@ impl VM {
     fn call_class(&mut self, class: Rc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
         *self.peek_mut(argc as usize) =
             Value::Instance(Rc::new(RefCell::new(ObjInstance::new(Rc::clone(&class)))));
-        if let Some(Value::Closure(initializer)) = class.borrow().methods.get(&self.init_string) {
-            return self.call_closure(Rc::clone(initializer), argc);
-        } else if argc != 0 {
-            return Err(RuntimeError(format!(
+
+        match class.borrow().methods.get(&self.init_string) {
+            None if argc != 0 => Err(RuntimeError(format!(
                 "Expected 0 arguments but got {}",
                 argc
-            )));
+            ))),
+            Some(init) => self.call_closure(Rc::clone(init.as_closure()), argc),
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     fn call_bound_method(
@@ -569,10 +554,8 @@ impl VM {
 
     fn define_method(&mut self, name: StrId) {
         let method = self.pop();
-        if let Value::Class(class) = self.peek(0) {
-            let class = Rc::clone(class);
-            class.borrow_mut().methods.insert(name, method);
-        }
+        let class = Rc::clone(self.peek(0).as_class());
+        class.borrow_mut().methods.insert(name, method);
     }
 
     fn bind_method(
@@ -581,15 +564,10 @@ impl VM {
         name: StrId,
     ) -> Result<(), RuntimeError> {
         match class.borrow().methods.get(&name) {
-            Some(Value::Closure(method)) => {
-                let instance = match self.pop() {
-                    Value::Instance(instance) => instance,
-                    _ => unimplemented!(),
-                };
-                let bound = Rc::new(ObjBoundMethod::new(
-                    Value::Instance(Rc::clone(&instance)),
-                    Rc::clone(method),
-                ));
+            Some(val) => {
+                let method = Rc::clone(val.as_closure());
+                let instance = Rc::clone(self.pop().as_instance());
+                let bound = Rc::new(ObjBoundMethod::new(Value::Instance(instance), method));
                 self.push(Value::BoundMethod(bound))?;
                 Ok(())
             }
@@ -597,7 +575,6 @@ impl VM {
                 "Undefined property '{}'",
                 intern::str(name)
             ))),
-            _ => unreachable!(),
         }
     }
 
@@ -606,6 +583,10 @@ impl VM {
         let (opcode, _) = frame.closure.fun.chunk.read_instruction(frame.ip);
         frame.ip += 1;
         &opcode
+    }
+
+    fn read_const(&self, idx: usize) -> &Value {
+        self.chunk().read_const(idx)
     }
 
     fn chunk(&self) -> &Chunk {

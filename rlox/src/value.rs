@@ -181,6 +181,21 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    /// Return true if the value is holding a closure object
+    pub fn is_closure(&self) -> bool {
+        matches!(self, Value::Closure(_))
+    }
+
+    /// Return true if the value is holding a class object
+    pub fn is_class(&self) -> bool {
+        matches!(self, Value::Class(_))
+    }
+
+    /// Return true if the value is holding an instance object
+    pub fn is_instance(&self) -> bool {
+        matches!(self, Value::Instance(_))
+    }
+
     /// Cast the value as a boolean
     pub fn as_bool(&self) -> bool {
         if let Value::Bool(bool) = self {
@@ -194,6 +209,42 @@ impl Value {
     pub fn as_str(&self) -> &StrId {
         if let Value::Str(str) = self {
             str
+        } else {
+            panic!("Invalid cast")
+        }
+    }
+
+    /// Cast the value as a closure object
+    pub fn as_closure(&self) -> &Rc<ObjClosure> {
+        if let Value::Closure(closure) = self {
+            closure
+        } else {
+            panic!("Invalid cast")
+        }
+    }
+
+    /// Cast the value as a function object
+    pub fn as_fun(&self) -> &Rc<ObjFun> {
+        if let Value::Fun(fun) = self {
+            fun
+        } else {
+            panic!("Invalid cast")
+        }
+    }
+
+    /// Cast the value as a class object
+    pub fn as_class(&self) -> &Rc<RefCell<ObjClass>> {
+        if let Value::Class(class) = self {
+            class
+        } else {
+            panic!("Invalid cast")
+        }
+    }
+
+    /// Cast the value as a instance object
+    pub fn as_instance(&self) -> &Rc<RefCell<ObjInstance>> {
+        if let Value::Instance(instance) = self {
+            instance
         } else {
             panic!("Invalid cast")
         }
