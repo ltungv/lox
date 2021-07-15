@@ -168,7 +168,7 @@ impl PartialEq for Value {
                     if !i2.fields.contains_key(k) {
                         return false;
                     }
-                    if !i1.fields[k].equal(&i2.fields[k]) {
+                    if i1.fields[k] != i2.fields[k] {
                         return false;
                     }
                 }
@@ -181,45 +181,6 @@ impl PartialEq for Value {
 }
 
 impl Value {
-    /// Check for equality between two values of the same type. If the operands are of different
-    /// types, return `false`.
-    pub fn equal(&self, other: &Value) -> bool {
-        match (self, other) {
-            (Self::Nil, Self::Nil) => true,
-            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
-            (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
-            (Self::Str(s1), Self::Str(s2)) => s1 == s2,
-            (Self::String(s1), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
-            (Self::Str(s1), Self::String(s2)) => intern::str(*s1) == s2.as_ref(),
-            (Self::String(s1), Self::String(s2)) => s1 == s2,
-            (Self::NativeFun(f1), Self::NativeFun(f2)) => f1.name == f2.name,
-            (Self::Closure(c1), Self::Closure(c2)) => Rc::ptr_eq(c1, c2),
-            (Self::Fun(f1), Self::Fun(f2)) => Rc::ptr_eq(f1, f2),
-            (Self::Class(c1), Self::Class(c2)) => Rc::ptr_eq(c1, c2),
-            (Self::Instance(i1), Self::Instance(i2)) => {
-                let i1 = i1.borrow();
-                let i2 = i2.borrow();
-                if !Rc::ptr_eq(&i1.class, &i2.class) {
-                    return false;
-                }
-                if i1.fields.len() != i2.fields.len() {
-                    return false;
-                }
-                for k in i1.fields.keys() {
-                    if !i2.fields.contains_key(k) {
-                        return false;
-                    }
-                    if !i1.fields[k].equal(&i2.fields[k]) {
-                        return false;
-                    }
-                }
-                true
-            }
-            (Self::BoundMethod(b1), Self::BoundMethod(b2)) => Rc::ptr_eq(b1, b2),
-            _ => false,
-        }
-    }
-
     /// Cast the value as a boolean
     pub fn as_bool(&self) -> bool {
         if let Value::Bool(bool) = self {
@@ -235,6 +196,22 @@ impl Value {
             str
         } else {
             panic!("Invalid cast")
+        }
+    }
+
+    /// Check if the current value is less than the given value
+    pub fn lt(&self, rhs: &Value) -> Result<Value, RuntimeError> {
+        match (self, rhs) {
+            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 < n2)),
+            _ => Err(RuntimeError("Operands must be numbers".to_string())),
+        }
+    }
+
+    /// Check if the current value is greater than the given value
+    pub fn gt(&self, rhs: &Value) -> Result<Value, RuntimeError> {
+        match (self, rhs) {
+            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 > n2)),
+            _ => Err(RuntimeError("Operands must be numbers".to_string())),
         }
     }
 }

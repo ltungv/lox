@@ -290,22 +290,18 @@ impl VM {
                 OpCode::Equal => {
                     let v2 = self.pop();
                     let v1 = self.peek_mut(0);
-                    *v1 = Value::Bool(v1.equal(&v2));
+                    *v1 = Value::Bool(*v1 == v2);
                 }
-                OpCode::Greater => match (self.pop(), self.peek(0)) {
-                    (Value::Number(n2), &Value::Number(n1)) => {
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Bool(n1 > n2);
-                    }
-                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
-                },
-                OpCode::Less => match (self.pop(), self.peek(0)) {
-                    (Value::Number(n2), &Value::Number(n1)) => {
-                        let v1 = self.peek_mut(0);
-                        *v1 = Value::Bool(n1 < n2);
-                    }
-                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
-                },
+                OpCode::Greater => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = v1.gt(&v2)?;
+                }
+                OpCode::Less => {
+                    let v2 = self.pop();
+                    let v1 = self.peek_mut(0);
+                    *v1 = v1.lt(&v2)?;
+                }
                 OpCode::Add => {
                     let v2 = self.pop();
                     let v1 = self.peek_mut(0);
