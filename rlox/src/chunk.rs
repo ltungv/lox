@@ -104,7 +104,13 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         println!("{:-16} {:4} -> {}", op_repr, jump, jump_target);
     };
     let invoke_instruction = |op_repr: &str, const_id: u8, argc: u8| {
-        println!("{:-16} ({} args) {:4} {}", op_repr, argc, const_id, chunk.read_const(const_id as usize));
+        println!(
+            "{:-16} ({} args) {:4} {}",
+            op_repr,
+            argc,
+            const_id,
+            chunk.read_const(const_id as usize)
+        );
     };
 
     match chunk.instructions[inst_idx] {
@@ -122,6 +128,7 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         OpCode::SetUpvalue(ref idx) => byte_instruction("OP_SET_UPVALUE", *idx),
         OpCode::GetProperty(ref const_id) => constant_instruction("OP_GET_PROPERTY", *const_id),
         OpCode::SetProperty(ref const_id) => constant_instruction("OP_SET_PROPERTY", *const_id),
+        OpCode::GetSuper(ref const_id) => constant_instruction("OP_GET_SUPER", *const_id),
         OpCode::Equal => println!("OP_EQUAL"),
         OpCode::Greater => println!("OP_GREATER"),
         OpCode::Less => println!("OP_LESS"),
@@ -139,6 +146,7 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         OpCode::Print => println!("OP_PRINT"),
         OpCode::Call(ref idx) => byte_instruction("OP_CALL", *idx),
         OpCode::Invoke(ref idx, ref argc) => invoke_instruction("OP_INVOKE", *idx, *argc),
+        OpCode::SuperInvoke(ref idx, ref argc) => invoke_instruction("OP_SUPER_INVOKE", *idx, *argc),
         OpCode::Closure(ref const_id, ref upvalues) => {
             let value = chunk.read_const(*const_id as usize);
             println!("{:-16} {:4} {}", "OP_CLOSURE", const_id, value);
@@ -154,6 +162,7 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         OpCode::CloseUpvalue => println!("OP_CLOSE_UPVALUE"),
         OpCode::Return => println!("OP_RETURN"),
         OpCode::Class(ref const_id) => constant_instruction("OP_CLASS", *const_id),
+        OpCode::Inherit => println!("OP_INHERIT"),
         OpCode::Method(ref const_id) => constant_instruction("OP_METHOD", *const_id),
     }
 }

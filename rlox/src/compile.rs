@@ -159,7 +159,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn level_pop(&mut self) -> ClosureLevel {
-        self.closure_levels.pop().expect("Wrong compiler state.")
+        self.closure_levels.pop().expect("Wrong compiler state")
     }
 
     fn level(&self, lvl: usize) -> &ClosureLevel {
@@ -297,6 +297,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn class_declaration(&mut self) {
+        // class name's
         self.consume(token::Type::Ident, "Expect class name");
         let class_name = intern::id(self.previous_token.lexeme);
 
@@ -305,8 +306,33 @@ impl<'a> Compiler<'a> {
 
         self.emit(OpCode::Class(name_constant));
         self.define_variable(name_constant);
-        self.class_levels.push(ClassLevel {});
+        self.class_levels.push(ClassLevel {
+            has_superclass: false,
+        });
 
+        // inheritance
+        if self.match_type(token::Type::Less) {
+            self.consume(token::Type::Ident, "Expect superclass name");
+            self.variable(false);
+            if class_name == intern::id(self.previous_token.lexeme) {
+                self.error("A class can't inherit from itself");
+            }
+            // We create a local variable that holds the referenced to the superclass.
+            // A new scope is created so that namespace of classes defined in the same
+            // scope don't collide.
+            self.begin_scope();
+            self.add_local(intern::id("super"));
+            self.define_variable(0);
+            // put the variable on stack so the runtime can access it
+            self.named_variable(class_name, false);
+            self.emit(OpCode::Inherit);
+            self.class_levels
+                .last_mut()
+                .expect("Unreachable")
+                .has_superclass = true;
+        }
+
+        // methods list
         self.named_variable(class_name, false);
         self.consume(token::Type::LBrace, "Expect '{' before class body");
         while !self.check(token::Type::RBrace) && !self.check(token::Type::Eof) {
@@ -314,6 +340,15 @@ impl<'a> Compiler<'a> {
         }
         self.consume(token::Type::RBrace, "Expect '}' after class body");
         self.emit(OpCode::Pop);
+
+        if self
+            .class_levels
+            .last()
+            .expect("Unreachable")
+            .has_superclass
+        {
+            self.end_scope();
+        }
         self.class_levels.pop();
     }
 
@@ -363,12 +398,20 @@ impl<'a> Compiler<'a> {
         self.make_const(Value::Str(name))
     }
 
+    fn add_local(&mut self, name: StrId) {
+        if self.level_current().locals.len() == MAX_LOCAL_VARIABLES {
+            self.error("Too many local variables in function");
+        }
+
+        let scope_depth = self.level_current().scope_depth;
+        self.level_current_mut()
+            .locals
+            .push((name, scope_depth).into());
+    }
+
     fn declare_variable(&mut self) {
         if self.level_current().scope_depth == 0 {
             return;
-        }
-        if self.level_current().locals.len() == MAX_LOCAL_VARIABLES {
-            self.error("Too many local variables in function");
         }
 
         let name = intern::id(self.previous_token.lexeme);
@@ -382,14 +425,11 @@ impl<'a> Compiler<'a> {
                 break;
             }
         }
+
         if name_duplicated {
             self.error("Already a variable with this name in this scope");
         }
-
-        let scope_depth = self.level_current().scope_depth;
-        self.level_current_mut()
-            .locals
-            .push((name, scope_depth).into());
+        self.add_local(name)
     }
 
     fn define_variable(&mut self, ident_id: u8) {
@@ -409,7 +449,7 @@ impl<'a> Compiler<'a> {
         self.level_current_mut()
             .locals
             .last_mut()
-            .expect("Undeclared.")
+            .expect("Undeclared")
             .initialized = true;
     }
 
@@ -696,6 +736,33 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn super_(&mut self) {
+        if self.class_levels.is_empty() {
+            self.error("Can't use 'super' outside of a class");
+        } else if !self
+            .class_levels
+            .last_mut()
+            .expect("Unreachable")
+            .has_superclass
+        {
+            self.error("Can't use 'super' in a class with no superclass");
+        }
+        // super are always expected to followed by a property
+        self.consume(token::Type::Dot, "Expect '.' after 'super'");
+        self.consume(token::Type::Ident, "Expect superclass method name");
+        let name = self.identifier_constant();
+
+        self.named_variable(intern::id("this"), false);
+        if self.match_type(token::Type::LParen) {
+            let argc = self.argument_list();
+            self.named_variable(intern::id("super"), false);
+            self.emit(OpCode::SuperInvoke(name, argc));
+        } else {
+            self.named_variable(intern::id("super"), false);
+            self.emit(OpCode::GetSuper(name));
+        }
+    }
+
     fn this(&mut self) {
         if self.class_levels.is_empty() {
             self.error("Can't use 'this' outside of a class");
@@ -788,7 +855,7 @@ impl<'a> Compiler<'a> {
     fn number(&mut self) {
         let value = intern::str(intern::id(self.previous_token.lexeme))
             .parse()
-            .expect("Unreachable.");
+            .expect("Unreachable");
         let constant = self.make_const(Value::Number(value));
         self.emit(OpCode::Constant(constant));
     }
@@ -826,6 +893,7 @@ impl<'a> Compiler<'a> {
         match self.previous_token.typ {
             token::Type::LParen => self.grouping(),
             token::Type::Minus | token::Type::Bang => self.unary(),
+            token::Type::Super => self.super_(),
             token::Type::This => self.this(),
             token::Type::Ident => self.variable(can_assign),
             token::Type::String => self.string(),
@@ -941,7 +1009,9 @@ impl<'a> Compiler<'a> {
 }
 
 #[derive(Debug)]
-struct ClassLevel {}
+struct ClassLevel {
+    has_superclass: bool,
+}
 
 #[derive(Debug)]
 struct ClosureLevel {

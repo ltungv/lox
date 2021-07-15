@@ -28,7 +28,7 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
-            Self::Runtime => write!(f, "Runtime error(s) occured"),
+            Self::Runtime => write!(f, "Runtime error(s) occured."),
             Self::Compile => write!(f, "Compilation error(s) occured."),
         }
     }
@@ -37,7 +37,7 @@ impl fmt::Display for Error {
 impl std::error::Error for RuntimeError {}
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.0)
+        write!(f, "{}.", self.0)
     }
 }
 

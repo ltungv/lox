@@ -65,6 +65,8 @@ pub enum OpCode {
     GetProperty(u8),
     /// Set the value of a property on the class instance
     SetProperty(u8),
+    /// Get the super class instance of the current class
+    GetSuper(u8),
     /// Check for equality between 2 operands.
     Equal,
     /// Compare if the first operand is greater than the second
@@ -93,16 +95,20 @@ pub enum OpCode {
     Loop(u16),
     /// Make a function call
     Call(u8),
-    /// Invoke method call directly without goin though an access operation
+    /// Invoke method call directly without going though an access operation
     Invoke(u8, u8),
+    /// Invoke super call directly without going though an access operation
+    SuperInvoke(u8, u8),
     /// Add a new closure
     Closure(u8, Vec<Upvalue>),
     /// Move captured value to the heap
     CloseUpvalue,
     /// Return from the current function
     Return,
-    /// Create a class and bind it to a name,
+    /// Create a class and bind it to a name
     Class(u8),
+    /// Create a inheritance relation between two classes
+    Inherit,
     /// Define a method
     Method(u8),
 }
@@ -111,7 +117,7 @@ fn clock_native(_args: &[Value]) -> Value {
     let start = std::time::SystemTime::now();
     let since_epoch = start
         .duration_since(std::time::UNIX_EPOCH)
-        .expect("Time went backwards.");
+        .expect("Time went backwards");
     Value::Number(since_epoch.as_secs_f64())
 }
 
@@ -206,10 +212,7 @@ impl VM {
                             .globals
                             .get(&name)
                             .ok_or_else(|| {
-                                RuntimeError(format!(
-                                    "Undefined variable '{}'.",
-                                    intern::str(*name)
-                                ))
+                                RuntimeError(format!("Undefined variable '{}'", intern::str(*name)))
                             })?
                             .clone();
                         self.push(val)?;
@@ -226,7 +229,7 @@ impl VM {
                         let val = self.peek(0).clone();
                         if !self.globals.contains_key(&name) {
                             return Err(RuntimeError(format!(
-                                "Undefined variable '{}'.",
+                                "Undefined variable '{}'",
                                 intern::str(name)
                             )));
                         }
@@ -251,18 +254,20 @@ impl VM {
                         ObjUpvalue::Closed(val) => *val = value,
                     };
                 }
-                OpCode::GetProperty(ref const_id) => match self.pop() {
+                OpCode::GetProperty(ref const_id) => match self.peek(0) {
                     Value::Instance(instance) => {
+                        let instance = Rc::clone(instance);
                         if let Value::Str(prop_name) = *self.chunk().read_const(*const_id as usize)
                         {
                             if let Some(val) = instance.borrow().fields.get(&prop_name) {
+                                self.pop();
                                 self.push(val.clone())?;
                             } else {
-                                self.bind_method(Rc::clone(&instance), prop_name)?
-                            }
+                                self.bind_method(Rc::clone(&instance.borrow().class), prop_name)?
+                            };
                         }
                     }
-                    _ => return Err(RuntimeError("Only instances have properties.".to_string())),
+                    _ => return Err(RuntimeError("Only instances have properties".to_string())),
                 },
                 OpCode::SetProperty(ref const_id) => {
                     let value = self.pop();
@@ -278,7 +283,15 @@ impl VM {
                                 self.push(value)?;
                             }
                         }
-                        _ => return Err(RuntimeError("Only instances have fields.".to_string())),
+                        _ => return Err(RuntimeError("Only instances have fields".to_string())),
+                    }
+                }
+                OpCode::GetSuper(ref const_id) => {
+                    match (self.pop(), self.chunk().read_const(*const_id as usize)) {
+                        (Value::Class(superclass), &Value::Str(name)) => {
+                            self.bind_method(superclass, name)?;
+                        }
+                        (_, _) => unreachable!(),
                     }
                 }
                 OpCode::Equal => {
@@ -291,14 +304,14 @@ impl VM {
                         let v1 = self.peek_mut(0);
                         *v1 = Value::Bool(n1 > n2);
                     }
-                    _ => return Err(RuntimeError("Operands must be numbers.".to_string())),
+                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
                 },
                 OpCode::Less => match (self.pop(), self.peek(0)) {
                     (Value::Number(n2), &Value::Number(n1)) => {
                         let v1 = self.peek_mut(0);
                         *v1 = Value::Bool(n1 < n2);
                     }
-                    _ => return Err(RuntimeError("Operands must be numbers.".to_string())),
+                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
                 },
                 OpCode::Add => match (self.pop(), self.peek(0)) {
                     (Value::Number(n2), &Value::Number(n1)) => {
@@ -327,21 +340,21 @@ impl VM {
                     }
                     _ => {
                         return Err(RuntimeError(
-                            "Operands must be two numbers or two strings.".to_string(),
+                            "Operands must be two numbers or two strings".to_string(),
                         ))
                     }
                 },
                 OpCode::Subtract => match (self.pop(), self.peek_mut(0)) {
                     (Value::Number(n2), Value::Number(n1)) => *n1 -= n2,
-                    _ => return Err(RuntimeError("Operands must be numbers.".to_string())),
+                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
                 },
                 OpCode::Multiply => match (self.pop(), self.peek_mut(0)) {
                     (Value::Number(n2), Value::Number(n1)) => *n1 *= n2,
-                    _ => return Err(RuntimeError("Operands must be numbers.".to_string())),
+                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
                 },
                 OpCode::Divide => match (self.pop(), self.peek_mut(0)) {
                     (Value::Number(n2), Value::Number(n1)) => *n1 /= n2,
-                    _ => return Err(RuntimeError("Operands must be numbers.".to_string())),
+                    _ => return Err(RuntimeError("Operands must be numbers".to_string())),
                 },
                 OpCode::Not => {
                     let v = self.peek_mut(0);
@@ -351,7 +364,7 @@ impl VM {
                     Value::Number(v) => {
                         *v = -*v;
                     }
-                    _ => return Err(RuntimeError("Operand must be a number.".to_string())),
+                    _ => return Err(RuntimeError("Operand must be a number".to_string())),
                 },
                 OpCode::Print => {
                     let v = self.pop();
@@ -379,6 +392,14 @@ impl VM {
                         _ => unreachable! {},
                     }
                 }
+                OpCode::SuperInvoke(ref const_id, ref argc) => {
+                    match (self.pop(), self.chunk().read_const(*const_id as usize)) {
+                        (Value::Class(superclass), &Value::Str(method)) => {
+                            self.invoke_from_class(superclass, method, *argc)?;
+                        }
+                        _ => unreachable! {},
+                    }
+                }
                 OpCode::Closure(ref fun_idx, ref upvalues) => {
                     if let Value::Fun(fun) = self.chunk().read_const(*fun_idx as usize) {
                         let fun = Rc::clone(fun);
@@ -400,7 +421,7 @@ impl VM {
                 OpCode::Return => {
                     let val = self.pop();
                     self.close_upvalues(self.frame().slot);
-                    let frame = self.frames.pop().expect("Frames empty.");
+                    let frame = self.frames.pop().expect("Frames empty");
                     if self.frames.is_empty() {
                         self.pop();
                         return Ok(());
@@ -415,6 +436,26 @@ impl VM {
                         let class = Rc::new(RefCell::new(ObjClass::new(*name)));
                         self.push(Value::Class(class))?;
                     }
+                }
+                OpCode::Inherit => {
+                    let (subclass, superclass) = match (self.pop(), self.peek(0)) {
+                        (Value::Class(sub), Value::Class(sup)) => (sub, Rc::clone(sup)),
+                        (Value::Class(_), _) => {
+                            return Err(RuntimeError("Superclass must be a class".to_string()))
+                        }
+                        (_, _) => unreachable!(),
+                    };
+                    // Upon inheritance, we copy all method references from the superclass
+                    // to the subclass. This technique does not work in languages that support
+                    // "monkey patching" lik Python or Ruby, where user can change the behaviors
+                    // of a class at runtme.
+                    subclass.borrow_mut().methods.extend(
+                        superclass
+                            .borrow()
+                            .methods
+                            .iter()
+                            .map(|(k, v)| (*k, v.clone())),
+                    );
                 }
                 OpCode::Method(ref const_id) => {
                     if let Value::Str(name) = *self.chunk().read_const(*const_id as usize) {
@@ -451,7 +492,7 @@ impl VM {
             Some(Value::Closure(c)) => Rc::clone(c),
             _ => {
                 return Err(RuntimeError(format!(
-                    "Undefined property '{}'.",
+                    "Undefined property '{}'",
                     intern::str(name)
                 )))
             }
@@ -466,7 +507,7 @@ impl VM {
             Value::Class(c) => self.call_class(c, argc),
             Value::BoundMethod(m) => self.call_bound_method(Rc::clone(&m), argc),
             _ => Err(RuntimeError(
-                "Can only call functions and classes.".to_string(),
+                "Can only call functions and classes".to_string(),
             )),
         }
     }
@@ -503,13 +544,13 @@ impl VM {
     fn call_closure(&mut self, closure: Rc<ObjClosure>, argc: u8) -> Result<(), RuntimeError> {
         if argc != closure.fun.arity {
             return Err(RuntimeError(format!(
-                "Expected {} arguments but got {}.",
+                "Expected {} arguments but got {}",
                 closure.fun.arity, argc
             )));
         }
 
         if self.frames.len() == MAX_FRAMES {
-            return Err(RuntimeError("Stack overflow.".to_string()));
+            return Err(RuntimeError("Stack overflow".to_string()));
         }
 
         let frame = CallFrame {
@@ -524,7 +565,7 @@ impl VM {
     fn call_native(&mut self, fun: NativeFun, argc: u8) -> Result<(), RuntimeError> {
         if argc != fun.arity {
             return Err(RuntimeError(format!(
-                "Expected {} arguments but got {}.",
+                "Expected {} arguments but got {}",
                 fun.arity, argc
             )));
         }
@@ -538,12 +579,7 @@ impl VM {
         self.push(res)
     }
 
-    fn define_native(
-        &mut self,
-        name: &str,
-        arity: u8,
-        call: fn(&[Value]) -> Value,
-    ) {
+    fn define_native(&mut self, name: &str, arity: u8, call: fn(&[Value]) -> Value) {
         let name = intern::id(name);
         self.globals
             .insert(name, Value::NativeFun(NativeFun { name, arity, call }));
@@ -556,7 +592,7 @@ impl VM {
             return self.call_closure(Rc::clone(initializer), argc);
         } else if argc != 0 {
             return Err(RuntimeError(format!(
-                "Expected 0 arguments but got {}.",
+                "Expected 0 arguments but got {}",
                 argc
             )));
         }
@@ -582,11 +618,15 @@ impl VM {
 
     fn bind_method(
         &mut self,
-        instance: Rc<RefCell<ObjInstance>>,
+        class: Rc<RefCell<ObjClass>>,
         name: StrId,
     ) -> Result<(), RuntimeError> {
-        match instance.borrow().class.borrow().methods.get(&name) {
+        match class.borrow().methods.get(&name) {
             Some(Value::Closure(method)) => {
+                let instance = match self.pop() {
+                    Value::Instance(instance) => instance,
+                    _ => unimplemented!(),
+                };
                 let bound = Rc::new(ObjBoundMethod::new(
                     Value::Instance(Rc::clone(&instance)),
                     Rc::clone(method),
@@ -595,7 +635,7 @@ impl VM {
                 Ok(())
             }
             None => Err(RuntimeError(format!(
-                "Undefined property '{}'.",
+                "Undefined property '{}'",
                 intern::str(name)
             ))),
             _ => unreachable!(),
@@ -614,34 +654,34 @@ impl VM {
     }
 
     fn frame(&self) -> &CallFrame {
-        self.frames.last().expect("Frames empty.")
+        self.frames.last().expect("Frames empty")
     }
 
     fn frame_mut(&mut self) -> &mut CallFrame {
-        self.frames.last_mut().expect("Frames empty.")
+        self.frames.last_mut().expect("Frames empty")
     }
 
     fn peek(&self, steps: usize) -> &Value {
         self.stack
             .get(self.stack.len() - 1 - steps)
-            .expect("Stack empty.")
+            .expect("Stack empty")
     }
 
     fn peek_mut(&mut self, steps: usize) -> &mut Value {
         let idx = self.stack.len() - 1 - steps;
-        self.stack.get_mut(idx).expect("Stack empty.")
+        self.stack.get_mut(idx).expect("Stack empty")
     }
 
     fn push(&mut self, val: Value) -> Result<(), RuntimeError> {
         if self.stack.len() == MAX_STACK {
-            return Err(RuntimeError("Stack overflow.".to_string()));
+            return Err(RuntimeError("Stack overflow".to_string()));
         }
         self.stack.push(val);
         Ok(())
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop().expect("Stack empty.")
+        self.stack.pop().expect("Stack empty")
     }
 
     /// Clear current stack and frames
