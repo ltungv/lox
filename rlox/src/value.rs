@@ -82,6 +82,8 @@ impl Value {
 /// A native function
 #[derive(Clone)]
 pub struct NativeFun {
+    /// Function's name
+    pub name: StrId,
     /// Number of parameters
     pub arity: u8,
     /// Native function reference

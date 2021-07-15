@@ -141,8 +141,7 @@ impl Default for VM {
             globals: HashMap::default(),
             init_string: intern::id("init"),
         };
-        vm.define_native("clock", 0, clock_native)
-            .expect("Unreachable.");
+        vm.define_native("clock", 0, clock_native);
         vm
     }
 }
@@ -544,12 +543,10 @@ impl VM {
         name: &str,
         arity: u8,
         call: fn(&[Value]) -> Value,
-    ) -> Result<(), RuntimeError> {
-        self.globals.insert(
-            intern::id(name),
-            Value::NativeFun(NativeFun { arity, call }),
-        );
-        Ok(())
+    ) {
+        let name = intern::id(name);
+        self.globals
+            .insert(name, Value::NativeFun(NativeFun { name, arity, call }));
     }
 
     fn call_class(&mut self, class: Rc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
