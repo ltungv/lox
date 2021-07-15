@@ -74,6 +74,30 @@ impl Value {
             (Self::String(s1), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
             (Self::Str(s1), Self::String(s2)) => intern::str(*s1) == s2.as_ref(),
             (Self::String(s1), Self::String(s2)) => s1 == s2,
+            (Self::NativeFun(f1), Self::NativeFun(f2)) => f1.name == f2.name,
+            (Self::Closure(c1), Self::Closure(c2)) => Rc::ptr_eq(c1, c2),
+            (Self::Fun(f1), Self::Fun(f2)) => Rc::ptr_eq(f1, f2),
+            (Self::Class(c1), Self::Class(c2)) => Rc::ptr_eq(c1, c2),
+            (Self::Instance(i1), Self::Instance(i2)) => {
+                let i1 = i1.borrow();
+                let i2 = i2.borrow();
+                if !Rc::ptr_eq(&i1.class, &i2.class) {
+                    return false;
+                }
+                if i1.fields.len() != i2.fields.len() {
+                    return false;
+                }
+                for k in i1.fields.keys() {
+                    if !i2.fields.contains_key(k) {
+                        return false;
+                    }
+                    if !i1.fields[k].equal(&i2.fields[k]) {
+                        return false;
+                    }
+                }
+                true
+            }
+            (Self::BoundMethod(b1), Self::BoundMethod(b2)) => Rc::ptr_eq(b1, b2),
             _ => false,
         }
     }
