@@ -9,3 +9,10 @@ edition = "2018"
 [dependencies]
 itertools = "0.10.1"
 string-interner = "0.12.2"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "method_calls"
+harness = false
