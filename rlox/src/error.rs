@@ -38,23 +38,6 @@ impl std::error::Error for RuntimeError {}
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.0)
-        // match self {
-        //     Self::StackOverflow => {
-        //         write!(f, "Stack overflow.")
-        //     }
-        //     Self::InvalidCall(ref msg) => {
-        //         write!(f, "{}.", msg)
-        //     }
-        //     Self::InvalidOperand(ref msg) => {
-        //         write!(f, "{}.", msg)
-        //     }
-        //     Self::UndefinedVariable(ref name) => {
-        //         write!(f, "Undefined variable '{}'.", name)
-        //     }
-        //     Self::UndefinedProperty(ref name) => {
-        //         write!(f, "Undefined variable '{}'.", name)
-        //     }
-        // }
     }
 }
 

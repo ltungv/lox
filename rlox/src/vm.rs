@@ -93,6 +93,8 @@ pub enum OpCode {
     Loop(u16),
     /// Make a function call
     Call(u8),
+    /// Invoke method call directly without goin though an access operation
+    Invoke(u8, u8),
     /// Add a new closure
     Closure(u8, Vec<Upvalue>),
     /// Move captured value to the heap
@@ -356,22 +358,31 @@ impl VM {
                     let v = self.pop();
                     println!("{}", v);
                 }
-                OpCode::Jump(offset) => {
-                    self.frame_mut().ip += offset as usize;
+                OpCode::Jump(ref offset) => {
+                    self.frame_mut().ip += *offset as usize;
                 }
-                OpCode::JumpIfFalse(offset) => {
+                OpCode::JumpIfFalse(ref offset) => {
                     if self.peek(0).is_falsey() {
-                        self.frame_mut().ip += offset as usize;
+                        self.frame_mut().ip += *offset as usize;
                     }
                 }
-                OpCode::Loop(offset) => {
-                    self.frame_mut().ip -= offset as usize;
+                OpCode::Loop(ref offset) => {
+                    self.frame_mut().ip -= *offset as usize;
                 }
-                OpCode::Call(argc) => {
-                    self.call_value(self.peek(argc as usize).clone(), argc)?;
+                OpCode::Call(ref argc) => {
+                    self.call_value(self.peek(*argc as usize).clone(), *argc)?;
                 }
-                OpCode::Closure(fun_idx, upvalues) => {
-                    if let Value::Fun(fun) = self.chunk().read_const(fun_idx as usize) {
+                OpCode::Invoke(ref const_id, ref argc) => {
+                    match *self.chunk().read_const(*const_id as usize) {
+                        Value::Str(name) => {
+                            self.invoke(name, *argc)?;
+                            self.frames.pop();
+                        }
+                        _ => unreachable! {},
+                    }
+                }
+                OpCode::Closure(ref fun_idx, ref upvalues) => {
+                    if let Value::Fun(fun) = self.chunk().read_const(*fun_idx as usize) {
                         let fun = Rc::clone(fun);
                         let upvalues = upvalues.iter().map(|upvalue| {
                             if upvalue.is_local {
@@ -391,7 +402,7 @@ impl VM {
                 OpCode::Return => {
                     let val = self.pop();
                     self.close_upvalues(self.frame().slot);
-                    let frame = self.frames.pop().expect("Frames empty");
+                    let frame = self.frames.pop().expect("Frames empty.");
                     if self.frames.is_empty() {
                         self.pop();
                         return Ok(());
@@ -414,6 +425,32 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn invoke(&mut self, name: StrId, argc: u8) -> Result<(), RuntimeError> {
+        let class = match self.peek(argc as usize) {
+            Value::Instance(receiver) => Rc::clone(&receiver.borrow().class),
+            _ => return Err(RuntimeError("Only instances have method.".to_string())),
+        };
+        self.invoke_from_class(class, name, argc)
+    }
+
+    fn invoke_from_class(
+        &mut self,
+        class: Rc<RefCell<ObjClass>>,
+        name: StrId,
+        argc: u8,
+    ) -> Result<(), RuntimeError> {
+        let method = match class.borrow().methods.get(&name) {
+            Some(Value::Closure(c)) => Rc::clone(c),
+            _ => {
+                return Err(RuntimeError(format!(
+                    "Undefined property '{}'.",
+                    intern::str(name)
+                )))
+            }
+        };
+        self.call_closure(method, argc)
     }
 
     fn call_value(&mut self, callee: Value, argc: u8) -> Result<(), RuntimeError> {
@@ -554,7 +591,7 @@ impl VM {
                 Ok(())
             }
             None => Err(RuntimeError(format!(
-                "Undefined property '{}'",
+                "Undefined property '{}'.",
                 intern::str(name)
             ))),
             _ => unreachable!(),

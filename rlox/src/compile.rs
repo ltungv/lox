@@ -687,6 +687,10 @@ impl<'a> Compiler<'a> {
         if can_assign && self.match_type(token::Type::Equal) {
             self.expression();
             self.emit(OpCode::SetProperty(name))
+        } else if self.match_type(token::Type::Equal) {
+            // directly invoke a method
+            let argc = self.argument_list();
+            self.emit(OpCode::Invoke(name, argc))
         } else {
             self.emit(OpCode::GetProperty(name))
         }

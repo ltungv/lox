@@ -103,6 +103,9 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         };
         println!("{:-16} {:4} -> {}", op_repr, jump, jump_target);
     };
+    let invoke_instruction = |op_repr: &str, const_id: u8, argc: u8| {
+        println!("{:-16} ({} args) {:4} {}", op_repr, argc, const_id, chunk.read_const(const_id as usize));
+    };
 
     match chunk.instructions[inst_idx] {
         OpCode::Constant(ref const_id) => constant_instruction("OP_CONSTANT", *const_id),
@@ -135,6 +138,7 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         OpCode::Loop(ref offset) => jump_instruction("OP_LOOP", inst_idx, *offset, false),
         OpCode::Print => println!("OP_PRINT"),
         OpCode::Call(ref idx) => byte_instruction("OP_CALL", *idx),
+        OpCode::Invoke(ref idx, ref argc) => invoke_instruction("OP_INVOKE", *idx, *argc),
         OpCode::Closure(ref const_id, ref upvalues) => {
             let value = chunk.read_const(*const_id as usize);
             println!("{:-16} {:4} {}", "OP_CLOSURE", const_id, value);
