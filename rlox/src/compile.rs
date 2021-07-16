@@ -146,92 +146,12 @@ impl<'a> Compiler<'a> {
         }
         self.emit_return();
 
-        let fun = self.level_pop().fun;
+        let fun = self.closure_level_pop().fun;
 
         #[cfg(debug_assertions)]
         disassemble_chunk(&fun.chunk, format!("{}", fun).as_str());
 
         Some(fun)
-    }
-
-    fn chunk(&mut self) -> &mut Chunk {
-        &mut self.level_current_mut().fun.chunk
-    }
-
-    fn level_pop(&mut self) -> ClosureLevel {
-        self.closure_levels.pop().expect("Wrong compiler state")
-    }
-
-    fn level(&self, lvl: usize) -> &ClosureLevel {
-        // last item contains the chunk that is currently written to
-        // level 0 --> current
-        // level 1 --> enclosing
-        // level 2 --> enlosing of enclosing
-        // level 3 --> so on...
-        let idx = self.closure_levels.len() - lvl - 1;
-        &self.closure_levels[idx]
-    }
-
-    fn level_mut(&mut self, lvl: usize) -> &mut ClosureLevel {
-        let idx = self.closure_levels.len() - lvl - 1;
-        &mut self.closure_levels[idx]
-    }
-
-    fn level_current(&self) -> &ClosureLevel {
-        self.level(0)
-    }
-
-    fn level_current_mut(&mut self) -> &mut ClosureLevel {
-        self.level_mut(0)
-    }
-
-    fn make_const(&mut self, v: Value) -> u8 {
-        if self.chunk().const_count() == MAX_CHUNK_CONSTANTS {
-            self.error("Too many constants in one chunk");
-            return MAX_CHUNK_CONSTANTS as u8;
-        }
-        let const_id = self.chunk().write_const(v);
-        const_id as u8
-    }
-
-    fn emit(&mut self, op: OpCode) {
-        let pos = self.previous_token.pos;
-        self.chunk().write_instruction(op, pos);
-    }
-
-    fn emit_return(&mut self) {
-        if self.level_current().fun_t == FunType::Initializer {
-            // A class initializer always return the instance, which locates
-            // at the start of the call frame
-            self.emit(OpCode::GetLocal(0));
-        } else {
-            self.emit(OpCode::Nil);
-        }
-        self.emit(OpCode::Return);
-    }
-
-    fn emit_jump<O: Fn(u16) -> OpCode>(&mut self, op: O) -> usize {
-        self.emit(op(0xFFFF));
-        self.chunk().instructions_count()
-    }
-
-    fn patch_jump(&mut self, jump: usize) {
-        let offset = self.chunk().instructions_count() - jump;
-        if offset > u16::MAX as usize {
-            self.error_current("Too much code to jump over");
-            return;
-        }
-        self.chunk().patch_jump_instruction(jump - 1, offset as u16);
-    }
-
-    fn emit_loop(&mut self, loop_start: usize) {
-        // +1 because the offset also takes into account the newly emitted loop opcode
-        let offset = self.chunk().instructions_count() - loop_start + 1;
-        if offset > u16::MAX as usize {
-            self.error("Loop body too large");
-            return;
-        }
-        self.emit(OpCode::Loop(offset as u16));
     }
 
     fn declaration(&mut self) {
@@ -266,11 +186,11 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::LParen, "Expect '(' after function name");
         if !self.check(token::Type::RParen) {
             loop {
-                if self.level_current_mut().fun.arity as usize == MAX_PARAMS {
+                if self.closure_level_mut(0).fun.arity as usize == MAX_PARAMS {
                     self.error_current("Can't have more than 255 parameters");
                 }
 
-                self.level_current_mut().fun.arity += 1;
+                self.closure_level_mut(0).fun.arity += 1;
                 let ident_id = self.parse_variable();
                 self.define_variable(ident_id);
 
@@ -284,7 +204,7 @@ impl<'a> Compiler<'a> {
         self.block();
 
         self.emit_return();
-        let level = self.level_pop();
+        let level = self.closure_level_pop();
         let fun = level.fun;
         let upvalues = level.upvalues;
 
@@ -326,10 +246,7 @@ impl<'a> Compiler<'a> {
             // put the variable on stack so the runtime can access it
             self.named_variable(class_name, false);
             self.emit(OpCode::Inherit);
-            self.class_levels
-                .last_mut()
-                .expect("Unreachable")
-                .has_superclass = true;
+            self.class_level_mut(0).has_superclass = true;
         }
 
         // methods list
@@ -341,15 +258,10 @@ impl<'a> Compiler<'a> {
         self.consume(token::Type::RBrace, "Expect '}' after class body");
         self.emit(OpCode::Pop);
 
-        if self
-            .class_levels
-            .last()
-            .expect("Unreachable")
-            .has_superclass
-        {
+        if self.class_level(0).has_superclass {
             self.end_scope();
         }
-        self.class_levels.pop();
+        self.class_level_pop();
     }
 
     fn method(&mut self) {
@@ -386,7 +298,7 @@ impl<'a> Compiler<'a> {
     fn parse_variable(&mut self) -> u8 {
         self.consume(token::Type::Ident, "Expect variable name");
         self.declare_variable();
-        if self.level_current().scope_depth > 0 {
+        if self.closure_level(0).scope_depth > 0 {
             0 // A dummy value used when we're not in the global scope
         } else {
             self.identifier_constant()
@@ -399,25 +311,25 @@ impl<'a> Compiler<'a> {
     }
 
     fn add_local(&mut self, name: StrId) {
-        if self.level_current().locals.len() == MAX_LOCAL_VARIABLES {
+        if self.closure_level(0).locals.len() == MAX_LOCAL_VARIABLES {
             self.error("Too many local variables in function");
         }
 
-        let scope_depth = self.level_current().scope_depth;
-        self.level_current_mut()
+        let scope_depth = self.closure_level(0).scope_depth;
+        self.closure_level_mut(0)
             .locals
             .push((name, scope_depth).into());
     }
 
     fn declare_variable(&mut self) {
-        if self.level_current().scope_depth == 0 {
+        if self.closure_level(0).scope_depth == 0 {
             return;
         }
 
         let name = intern::id(self.previous_token.lexeme);
         let mut name_duplicated = false;
-        for l in self.level_current().locals.iter().rev() {
-            if l.initialized && l.depth < self.level_current().scope_depth {
+        for l in self.closure_level(0).locals.iter().rev() {
+            if l.initialized && l.depth < self.closure_level(0).scope_depth {
                 break;
             }
             if l.name == name {
@@ -435,7 +347,7 @@ impl<'a> Compiler<'a> {
     fn define_variable(&mut self, ident_id: u8) {
         // Local variables are not looked up by name. There's no need to stuff
         // the variable name into the constant table.
-        if self.level_current().scope_depth > 0 {
+        if self.closure_level(0).scope_depth > 0 {
             self.mark_initialized();
         } else {
             self.emit(OpCode::DefineGlobal(ident_id));
@@ -443,10 +355,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn mark_initialized(&mut self) {
-        if self.level_current().scope_depth == 0 {
+        if self.closure_level(0).scope_depth == 0 {
             return;
         }
-        self.level_current_mut()
+        self.closure_level_mut(0)
             .locals
             .last_mut()
             .expect("Wrong compiler state")
@@ -481,13 +393,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn begin_scope(&mut self) {
-        self.level_current_mut().scope_depth += 1;
+        self.closure_level_mut(0).scope_depth += 1;
     }
 
     fn end_scope(&mut self) {
-        self.level_current_mut().scope_depth -= 1;
-        while let Some(l) = self.level_current().locals.last() {
-            if l.depth <= self.level_current().scope_depth {
+        self.closure_level_mut(0).scope_depth -= 1;
+        while let Some(l) = self.closure_level(0).locals.last() {
+            if l.depth <= self.closure_level(0).scope_depth {
                 break;
             }
             if l.captured {
@@ -495,19 +407,19 @@ impl<'a> Compiler<'a> {
             } else {
                 self.emit(OpCode::Pop);
             }
-            self.level_current_mut().locals.pop();
+            self.closure_level_mut(0).locals.pop();
         }
     }
 
     fn return_statement(&mut self) {
-        if self.level_current().fun_t == FunType::Script {
+        if self.closure_level(0).fun_t == FunType::Script {
             self.error("Can't return from top-level code")
         }
 
         if self.match_type(token::Type::Semicolon) {
             self.emit_return();
         } else {
-            if self.level_current().fun_t == FunType::Initializer {
+            if self.closure_level(0).fun_t == FunType::Initializer {
                 self.error("Can't return a value from an initializer");
             }
             self.expression();
@@ -739,12 +651,7 @@ impl<'a> Compiler<'a> {
     fn super_(&mut self) {
         if self.class_levels.is_empty() {
             self.error("Can't use 'super' outside of a class");
-        } else if !self
-            .class_levels
-            .last_mut()
-            .expect("Unreachable")
-            .has_superclass
-        {
+        } else if !self.class_level_mut(0).has_superclass {
             self.error("Can't use 'super' in a class with no superclass");
         }
         // super are always expected to followed by a property
@@ -796,7 +703,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&mut self, level: usize, name: StrId) -> Option<u8> {
-        self.level(level)
+        self.closure_level(level)
             .locals
             .iter()
             .enumerate()
@@ -812,7 +719,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn add_upvalue(&mut self, level: usize, index: u8, is_local: bool) -> usize {
-        let level = self.level_mut(level);
+        let level = self.closure_level_mut(level);
         let upvalue_count = level.upvalues.len();
         // reuse upvalue if a variable is referenced multiple times
         for (i, upvalue) in level.upvalues.iter().enumerate() {
@@ -836,7 +743,7 @@ impl<'a> Compiler<'a> {
             return None;
         }
         if let Some(local) = self.resolve_local(level + 1, name) {
-            self.level_mut(level + 1).locals[local as usize].captured = true;
+            self.closure_level_mut(level + 1).locals[local as usize].captured = true;
             return Some(self.add_upvalue(level, local, true) as u8);
         }
         if let Some(upvalue) = self.resolve_upvalue(level + 1, name) {
@@ -983,6 +890,92 @@ impl<'a> Compiler<'a> {
             return false;
         }
         true
+    }
+
+    fn chunk(&mut self) -> &mut Chunk {
+        &mut self.closure_level_mut(0).fun.chunk
+    }
+
+    fn closure_level(&self, lvl: usize) -> &ClosureLevel {
+        // last item contains the chunk that is currently written to
+        // level 0 --> current
+        // level 1 --> enclosing
+        // level 2 --> enlosing of enclosing
+        // level 3 --> so on...
+        let idx = self.closure_levels.len() - lvl - 1;
+        &self.closure_levels[idx]
+    }
+
+    fn closure_level_mut(&mut self, lvl: usize) -> &mut ClosureLevel {
+        let idx = self.closure_levels.len() - lvl - 1;
+        &mut self.closure_levels[idx]
+    }
+
+    fn closure_level_pop(&mut self) -> ClosureLevel {
+        self.closure_levels.pop().expect("Wrong compiler state")
+    }
+
+    fn class_level(&self, lvl: usize) -> &ClassLevel {
+        let idx = self.class_levels.len() - lvl - 1;
+        &self.class_levels[idx]
+    }
+
+    fn class_level_mut(&mut self, lvl: usize) -> &mut ClassLevel {
+        let idx = self.class_levels.len() - lvl - 1;
+        &mut self.class_levels[idx]
+    }
+
+    fn class_level_pop(&mut self) {
+        self.class_levels.pop().expect("Wrong compiler state");
+    }
+
+    fn make_const(&mut self, v: Value) -> u8 {
+        if self.chunk().const_count() == MAX_CHUNK_CONSTANTS {
+            self.error("Too many constants in one chunk");
+            return MAX_CHUNK_CONSTANTS as u8;
+        }
+        let const_id = self.chunk().write_const(v);
+        const_id as u8
+    }
+
+    fn emit(&mut self, op: OpCode) {
+        let pos = self.previous_token.pos;
+        self.chunk().write_instruction(op, pos);
+    }
+
+    fn emit_return(&mut self) {
+        if self.closure_level(0).fun_t == FunType::Initializer {
+            // A class initializer always return the instance, which locates
+            // at the start of the call frame
+            self.emit(OpCode::GetLocal(0));
+        } else {
+            self.emit(OpCode::Nil);
+        }
+        self.emit(OpCode::Return);
+    }
+
+    fn emit_jump<O: Fn(u16) -> OpCode>(&mut self, op: O) -> usize {
+        self.emit(op(0xFFFF));
+        self.chunk().instructions_count()
+    }
+
+    fn patch_jump(&mut self, jump: usize) {
+        let offset = self.chunk().instructions_count() - jump;
+        if offset > u16::MAX as usize {
+            self.error_current("Too much code to jump over");
+            return;
+        }
+        self.chunk().patch_jump_instruction(jump - 1, offset as u16);
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) {
+        // +1 because the offset also takes into account the newly emitted loop opcode
+        let offset = self.chunk().instructions_count() - loop_start + 1;
+        if offset > u16::MAX as usize {
+            self.error("Loop body too large");
+            return;
+        }
+        self.emit(OpCode::Loop(offset as u16));
     }
 
     fn error(&mut self, message: &'static str) {
