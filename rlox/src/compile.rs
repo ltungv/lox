@@ -449,7 +449,7 @@ impl<'a> Compiler<'a> {
         self.level_current_mut()
             .locals
             .last_mut()
-            .expect("Undeclared")
+            .expect("Wrong compiler state")
             .initialized = true;
     }
 

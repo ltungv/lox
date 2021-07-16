@@ -2,7 +2,7 @@ use std::ops::{Add, Div, Mul, Neg, Not, Sub};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    intern, Chunk, Compiler, Error, NativeFun, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance,
+    intern, Compiler, Error, NativeFun, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance,
     ObjUpvalue, RuntimeError, StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
 };
 
@@ -182,7 +182,7 @@ impl VM {
             #[cfg(debug_assertions)]
             {
                 print_stack(&self.stack);
-                disassemble_instruction(&self.chunk(), self.frame().ip as usize);
+                disassemble_instruction(&self.frame().closure.fun.chunk, self.frame().ip as usize);
             }
 
             let opcode = self.next_instruction().clone();
@@ -379,9 +379,7 @@ impl VM {
                         self.pop();
                         return Ok(());
                     }
-                    while self.stack.len() != frame.slot {
-                        self.pop();
-                    }
+                    self.popn(self.stack.len() - frame.slot);
                     self.push(val)?;
                 }
                 OpCode::Class(ref const_id) => {
@@ -436,10 +434,10 @@ impl VM {
         argc: u8,
     ) -> Result<(), RuntimeError> {
         let class = class.borrow();
-        let method = class.methods.get(&name).ok_or(RuntimeError(format!(
-            "Undefined property '{}'",
-            intern::str(name)
-        )))?;
+        let method = class
+            .methods
+            .get(&name)
+            .ok_or_else(|| RuntimeError(format!("Undefined property '{}'", intern::str(name))))?;
         let method = Rc::clone(method.as_closure());
         self.call_closure(method, argc)
     }
@@ -517,9 +515,7 @@ impl VM {
         let args = &self.stack[self.stack.len() - argc..];
         let call = fun.call;
         let res = call(args);
-        for _ in 0..argc {
-            self.pop();
-        }
+        self.popn(argc + 1);
         self.push(res)
     }
 
@@ -586,11 +582,7 @@ impl VM {
     }
 
     fn read_const(&self, idx: usize) -> &Value {
-        self.chunk().read_const(idx)
-    }
-
-    fn chunk(&self) -> &Chunk {
-        &self.frame().closure.fun.chunk
+        self.frame().closure.fun.chunk.read_const(idx)
     }
 
     fn frame(&self) -> &CallFrame {
@@ -622,6 +614,10 @@ impl VM {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Stack empty")
+    }
+
+    fn popn(&mut self, n: usize) {
+        self.stack.drain(self.stack.len() - n..);
     }
 
     /// Clear current stack and frames

@@ -29,7 +29,7 @@ pub fn str(id: StrId) -> String {
         intern
             .borrow_mut()
             .resolve(id)
-            .expect("Not allocated.")
+            .expect("Not allocated")
             .to_string()
     })
 }
