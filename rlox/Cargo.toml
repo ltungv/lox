@@ -14,5 +14,5 @@ string-interner = "0.12.2"
 criterion = "0.3"
 
 [[bench]]
-name = "method_calls"
+name = "basics"
 harness = false
