@@ -1,4 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
+use std::{cell::RefCell, fmt, rc::Rc};
+
+use rustc_hash::FxHashMap;
 
 use crate::{intern, Chunk, StrId, Value};
 
@@ -8,7 +10,7 @@ pub struct ObjInstance {
     /// The class type of this instance
     pub class: Rc<RefCell<ObjClass>>,
     /// The fields that this instance stores
-    pub fields: HashMap<StrId, Value>,
+    pub fields: FxHashMap<StrId, Value>,
 }
 
 impl ObjInstance {
@@ -16,7 +18,7 @@ impl ObjInstance {
     pub fn new(class: Rc<RefCell<ObjClass>>) -> Self {
         Self {
             class,
-            fields: HashMap::new(),
+            fields: FxHashMap::default(),
         }
     }
 }
@@ -33,7 +35,7 @@ pub struct ObjClass {
     /// Class name
     pub name: StrId,
     /// Mapping of all methods defined on the class
-    pub methods: HashMap<StrId, Value>,
+    pub methods: FxHashMap<StrId, Value>,
 }
 
 impl ObjClass {
@@ -41,7 +43,7 @@ impl ObjClass {
     pub fn new(name: StrId) -> Self {
         Self {
             name,
-            methods: HashMap::new(),
+            methods: FxHashMap::default(),
         }
     }
 }

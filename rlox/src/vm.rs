@@ -1,5 +1,7 @@
 use std::ops::{Add, Div, Mul, Neg, Not, Sub};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
+
+use rustc_hash::FxHashMap;
 
 use crate::{
     intern, Compiler, Error, NativeFun, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance,
@@ -135,7 +137,7 @@ pub struct VM {
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
     open_upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
-    globals: HashMap<StrId, Value>,
+    globals: FxHashMap<StrId, Value>,
     init_string: StrId,
 }
 
@@ -145,7 +147,7 @@ impl Default for VM {
             stack: Vec::with_capacity(MAX_STACK),
             frames: Vec::with_capacity(MAX_FRAMES),
             open_upvalues: Vec::new(),
-            globals: HashMap::default(),
+            globals: FxHashMap::default(),
             init_string: intern::id("init"),
         };
         vm.define_native("clock", 0, clock_native);
