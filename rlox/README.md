@@ -1,6 +1,7 @@
 # Rlox
 
 A bytecode virtual machine written in Rust for the Lox programming language. This implementation uses Rust's reference counted object to manage memory, instead of a mark-and-sweep garbage collector.
+As a result, memory is leaked when there's a reference cycle (see [reference_cycle.lox](../playground/reference_cycle.lox))
 
 ## Implemented challenges
 
