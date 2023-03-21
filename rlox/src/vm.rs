@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     intern, Compiler, Error, NativeFun, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance,
-    ObjUpvalue, RuntimeError, StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
+    ObjUpvalue, Object, RuntimeError, StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
 };
 
 #[cfg(debug_assertions)]
@@ -166,7 +166,7 @@ impl VM {
 
         || -> Result<(), RuntimeError> {
             let closure = Rc::new(ObjClosure::new(fun, Vec::new()));
-            self.push(Value::Closure(Rc::clone(&closure)))?;
+            self.push(Value::Object(Object::Closure(Rc::clone(&closure))))?;
             self.call_closure(closure, 0)?;
             self.run()
         }()
@@ -367,7 +367,7 @@ impl VM {
                         }
                     });
                     let closure = Rc::new(ObjClosure::new(fun, upvalues.collect()));
-                    self.push(Value::Closure(closure))?;
+                    self.push(Value::Object(Object::Closure(closure)))?;
                 }
                 OpCode::CloseUpvalue => {
                     self.close_upvalues(self.stack.len() - 1);
@@ -387,7 +387,7 @@ impl VM {
                 OpCode::Class(ref const_id) => {
                     let name = self.read_const(*const_id as usize).as_str();
                     let class = Rc::new(RefCell::new(ObjClass::new(*name)));
-                    self.push(Value::Class(class))?;
+                    self.push(Value::Object(Object::Class(class)))?;
                 }
                 OpCode::Inherit => {
                     let subclass = self.pop();
@@ -446,10 +446,10 @@ impl VM {
 
     fn call_value(&mut self, callee: Value, argc: u8) -> Result<(), RuntimeError> {
         match callee {
-            Value::Closure(c) => self.call_closure(c, argc),
             Value::NativeFun(f) => self.call_native(f, argc),
-            Value::Class(c) => self.call_class(c, argc),
-            Value::BoundMethod(m) => self.call_bound_method(Rc::clone(&m), argc),
+            Value::Object(Object::Closure(c)) => self.call_closure(c, argc),
+            Value::Object(Object::Class(c)) => self.call_class(c, argc),
+            Value::Object(Object::BoundMethod(m)) => self.call_bound_method(Rc::clone(&m), argc),
             _ => Err(RuntimeError(
                 "Can only call functions and classes".to_string(),
             )),
@@ -528,13 +528,12 @@ impl VM {
     }
 
     fn call_class(&mut self, class: Rc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
-        *self.peek_mut(argc as usize) =
-            Value::Instance(Rc::new(RefCell::new(ObjInstance::new(Rc::clone(&class)))));
+        *self.peek_mut(argc as usize) = Value::Object(Object::Instance(Rc::new(RefCell::new(
+            ObjInstance::new(Rc::clone(&class)),
+        ))));
 
         match class.borrow().methods.get(&self.init_string) {
-            None if argc != 0 => Err(RuntimeError(format!(
-                "Expected 0 arguments but got {argc}"
-            ))),
+            None if argc != 0 => Err(RuntimeError(format!("Expected 0 arguments but got {argc}"))),
             Some(init) => self.call_closure(Rc::clone(init.as_closure()), argc),
             _ => Ok(()),
         }
@@ -564,8 +563,11 @@ impl VM {
             Some(val) => {
                 let method = Rc::clone(val.as_closure());
                 let instance = Rc::clone(self.pop().as_instance());
-                let bound = Rc::new(ObjBoundMethod::new(Value::Instance(instance), method));
-                self.push(Value::BoundMethod(bound))?;
+                let bound = Rc::new(ObjBoundMethod::new(
+                    Value::Object(Object::Instance(instance)),
+                    method,
+                ));
+                self.push(Value::Object(Object::BoundMethod(bound)))?;
                 Ok(())
             }
             None => Err(RuntimeError(format!(

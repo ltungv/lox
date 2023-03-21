@@ -1,9 +1,7 @@
 use std::ops;
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{
-    intern, ObjBoundMethod, ObjClass, ObjClosure, ObjFun, ObjInstance, RuntimeError, StrId,
-};
+use crate::{intern, ObjClass, ObjClosure, ObjFun, ObjInstance, Object, RuntimeError, StrId};
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
@@ -16,20 +14,10 @@ pub enum Value {
     Number(f64),
     /// A constant hashed string
     Str(StrId),
-    /// A heap allocated string
-    String(Rc<str>),
     /// A native function reference
     NativeFun(NativeFun),
-    /// A closure that can captured surrounding variables
-    Closure(Rc<ObjClosure>),
-    /// A function object
-    Fun(Rc<ObjFun>),
-    /// A class object
-    Class(Rc<RefCell<ObjClass>>),
-    /// A class instance
-    Instance(Rc<RefCell<ObjInstance>>),
-    /// A class instance
-    BoundMethod(Rc<ObjBoundMethod>),
+    /// A heap-allocated object
+    Object(Object),
 }
 
 impl fmt::Display for Value {
@@ -45,13 +33,8 @@ impl fmt::Display for Value {
                 }
             }
             Self::Str(s) => write!(f, "{}", intern::str(*s)),
-            Self::String(s) => write!(f, "{s}"),
             Self::NativeFun(fun) => write!(f, "{fun}"),
-            Self::Closure(c) => write!(f, "{c}"),
-            Self::Fun(fun) => write!(f, "{fun}"),
-            Self::Class(c) => write!(f, "{}", c.borrow()),
-            Self::Instance(i) => write!(f, "{}", i.borrow()),
-            Self::BoundMethod(m) => write!(f, "{m}"),
+            Self::Object(o) => write!(f, "{o}"),
         }
     }
 }
@@ -64,19 +47,19 @@ impl ops::Add for &Value {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
             (Value::Str(s1), Value::Str(s2)) => {
                 let res = Rc::from(intern::str(*s1) + intern::str(*s2).as_str());
-                Ok(Value::String(res))
+                Ok(Value::Object(Object::String(res)))
             }
-            (Value::String(s1), Value::Str(s2)) => {
+            (Value::Object(Object::String(s1)), Value::Str(s2)) => {
                 let res = Rc::from(s1.as_ref().to_string() + intern::str(*s2).as_str());
-                Ok(Value::String(res))
+                Ok(Value::Object(Object::String(res)))
             }
-            (Value::Str(s1), Value::String(s2)) => {
+            (Value::Str(s1), Value::Object(Object::String(s2))) => {
                 let res = Rc::from(intern::str(*s1) + s2.as_ref());
-                Ok(Value::String(res))
+                Ok(Value::Object(Object::String(res)))
             }
-            (Value::String(s1), Value::String(s2)) => {
+            (Value::Object(Object::String(s1)), Value::Object(Object::String(s2))) => {
                 let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
-                Ok(Value::String(res))
+                Ok(Value::Object(Object::String(res)))
             }
             _ => Err(RuntimeError(
                 "Operands must be two numbers or two strings".to_string(),
@@ -148,14 +131,18 @@ impl PartialEq for Value {
             (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
             (Self::Number(v1), Self::Number(v2)) => (v1 - v2).abs() < f64::EPSILON,
             (Self::Str(s1), Self::Str(s2)) => s1 == s2,
-            (Self::String(s1), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
-            (Self::Str(s1), Self::String(s2)) => intern::str(*s1) == s2.as_ref(),
-            (Self::String(s1), Self::String(s2)) => s1 == s2,
+            (Self::Str(s1), Self::Object(Object::String(s2))) => intern::str(*s1) == s2.as_ref(),
             (Self::NativeFun(f1), Self::NativeFun(f2)) => f1.name == f2.name,
-            (Self::Closure(c1), Self::Closure(c2)) => Rc::ptr_eq(c1, c2),
-            (Self::Fun(f1), Self::Fun(f2)) => Rc::ptr_eq(f1, f2),
-            (Self::Class(c1), Self::Class(c2)) => Rc::ptr_eq(c1, c2),
-            (Self::Instance(i1), Self::Instance(i2)) => {
+            (Self::Object(Object::String(s1)), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
+            (Self::Object(Object::String(s1)), Self::Object(Object::String(s2))) => s1 == s2,
+            (Self::Object(Object::Closure(c1)), Self::Object(Object::Closure(c2))) => {
+                Rc::ptr_eq(c1, c2)
+            }
+            (Self::Object(Object::Fun(f1)), Self::Object(Object::Fun(f2))) => Rc::ptr_eq(f1, f2),
+            (Self::Object(Object::Class(c1)), Self::Object(Object::Class(c2))) => {
+                Rc::ptr_eq(c1, c2)
+            }
+            (Self::Object(Object::Instance(i1)), Self::Object(Object::Instance(i2))) => {
                 let i1 = i1.borrow();
                 let i2 = i2.borrow();
                 if !Rc::ptr_eq(&i1.class, &i2.class) {
@@ -174,7 +161,9 @@ impl PartialEq for Value {
                 }
                 true
             }
-            (Self::BoundMethod(b1), Self::BoundMethod(b2)) => Rc::ptr_eq(b1, b2),
+            (Self::Object(Object::BoundMethod(b1)), Self::Object(Object::BoundMethod(b2))) => {
+                Rc::ptr_eq(b1, b2)
+            }
             _ => false,
         }
     }
@@ -183,17 +172,17 @@ impl PartialEq for Value {
 impl Value {
     /// Return true if the value is holding a closure object
     pub fn is_closure(&self) -> bool {
-        matches!(self, Value::Closure(_))
+        matches!(self, Value::Object(Object::Closure(_)))
     }
 
     /// Return true if the value is holding a class object
     pub fn is_class(&self) -> bool {
-        matches!(self, Value::Class(_))
+        matches!(self, Value::Object(Object::Class(_)))
     }
 
     /// Return true if the value is holding an instance object
     pub fn is_instance(&self) -> bool {
-        matches!(self, Value::Instance(_))
+        matches!(self, Value::Object(Object::Instance(_)))
     }
 
     /// Cast the value as a boolean
@@ -216,7 +205,7 @@ impl Value {
 
     /// Cast the value as a closure object
     pub fn as_closure(&self) -> &Rc<ObjClosure> {
-        if let Value::Closure(closure) = self {
+        if let Value::Object(Object::Closure(closure)) = self {
             closure
         } else {
             panic!("Invalid cast")
@@ -225,7 +214,7 @@ impl Value {
 
     /// Cast the value as a function object
     pub fn as_fun(&self) -> &Rc<ObjFun> {
-        if let Value::Fun(fun) = self {
+        if let Value::Object(Object::Fun(fun)) = self {
             fun
         } else {
             panic!("Invalid cast")
@@ -234,7 +223,7 @@ impl Value {
 
     /// Cast the value as a class object
     pub fn as_class(&self) -> &Rc<RefCell<ObjClass>> {
-        if let Value::Class(class) = self {
+        if let Value::Object(Object::Class(class)) = self {
             class
         } else {
             panic!("Invalid cast")
@@ -243,7 +232,7 @@ impl Value {
 
     /// Cast the value as a instance object
     pub fn as_instance(&self) -> &Rc<RefCell<ObjInstance>> {
-        if let Value::Instance(instance) = self {
+        if let Value::Object(Object::Instance(instance)) = self {
             instance
         } else {
             panic!("Invalid cast")

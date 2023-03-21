@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StrId, Token, Value,
-    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_UPVALUES,
+    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_UPVALUES, Object,
 };
 
 #[cfg(debug_assertions)]
@@ -212,7 +212,7 @@ impl<'a> Compiler<'a> {
         disassemble_chunk(&fun.chunk, format!("{fun}").as_str());
 
         let fun = Rc::new(fun);
-        let const_id = self.make_const(Value::Fun(fun));
+        let const_id = self.make_const(Value::Object(Object::Fun(fun)));
         self.emit(OpCode::Closure(const_id, upvalues));
     }
 

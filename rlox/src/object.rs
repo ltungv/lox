@@ -4,6 +4,36 @@ use rustc_hash::FxHashMap;
 
 use crate::{intern, Chunk, StrId, Value};
 
+/// Enumeration of heap-allocated object type.
+#[derive(Debug, Clone)]
+pub enum Object {
+    /// A heap allocated string
+    String(Rc<str>),
+    /// A closure that can captured surrounding variables
+    Closure(Rc<ObjClosure>),
+    /// A function object
+    Fun(Rc<ObjFun>),
+    /// A class object
+    Class(Rc<RefCell<ObjClass>>),
+    /// A class instance
+    Instance(Rc<RefCell<ObjInstance>>),
+    /// A class instance
+    BoundMethod(Rc<ObjBoundMethod>),
+}
+
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            Self::String(s) => write!(f, "{s}"),
+            Self::Closure(c) => write!(f, "{c}"),
+            Self::Fun(fun) => write!(f, "{fun}"),
+            Self::Class(c) => write!(f, "{}", c.borrow()),
+            Self::Instance(i) => write!(f, "{}", i.borrow()),
+            Self::BoundMethod(m) => write!(f, "{m}"),
+        }
+    }
+}
+
 /// A structure for class instance information
 #[derive(Debug)]
 pub struct ObjInstance {
