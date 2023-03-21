@@ -25,14 +25,14 @@ fn run_repl() {
     loop {
         print!("> ");
         if let Err(err) = std::io::stdout().flush() {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             process::exit(74);
         };
 
         let mut line = String::new();
         match reader.read_line(&mut line) {
             Err(err) => {
-                eprintln!("{}", err);
+                eprintln!("{err}");
                 process::exit(74);
             }
             Ok(n) => {
@@ -49,7 +49,7 @@ fn run_file(path: &str) {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             process::exit(74);
         }
     };

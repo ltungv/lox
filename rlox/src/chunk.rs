@@ -69,7 +69,7 @@ impl Chunk {
 /// Go through the instructions in the chunk and display them in human-readable format.
 #[cfg(debug_assertions)]
 pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
-    println!("== {} ==", name);
+    println!("== {name} ==");
     for i in 0..chunk.instructions.len() {
         disassemble_instruction(chunk, i);
     }
@@ -78,7 +78,7 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
 /// Display an instruction in human readable format.
 #[cfg(debug_assertions)]
 pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
-    print!("{:04} ", inst_idx);
+    print!("{inst_idx:04} ");
     if inst_idx > 0 && chunk.positions[inst_idx].line == chunk.positions[inst_idx - 1].line {
         print!("   | ");
     } else {
@@ -93,7 +93,7 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
             chunk.read_const(const_id as usize)
         );
     };
-    let byte_instruction = |op_repr: &str, slot: u8| println!("{:-16} {:4}", op_repr, slot);
+    let byte_instruction = |op_repr: &str, slot: u8| println!("{op_repr:-16} {slot:4}");
     let jump_instruction = |op_repr: &str, jump: usize, offset: u16, fwd: bool| {
         // +1 since the instruction pointer is increased right after we read an opcode
         let jump_target = if fwd {
@@ -101,7 +101,7 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         } else {
             jump + 1 - offset as usize
         };
-        println!("{:-16} {:4} -> {}", op_repr, jump, jump_target);
+        println!("{op_repr:-16} {jump:4} -> {jump_target}");
     };
     let invoke_instruction = |op_repr: &str, const_id: u8, argc: u8| {
         println!(

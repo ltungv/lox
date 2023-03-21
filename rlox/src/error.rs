@@ -45,9 +45,9 @@ impl std::error::Error for ScanError {}
 impl fmt::Display for ScanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnterminatedString(ref pos) => write!(f, "{} Error: Unterminated string.", pos),
+            Self::UnterminatedString(ref pos) => write!(f, "{pos} Error: Unterminated string."),
             Self::UnexpectedCharacter(ref pos) => {
-                write!(f, "{} Error: Unexpected character.", pos)
+                write!(f, "{pos} Error: Unexpected character.")
             }
         }
     }

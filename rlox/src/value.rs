@@ -36,22 +36,22 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Self::Nil => write!(f, "nil"),
-            Self::Bool(b) => write!(f, "{}", b),
+            Self::Bool(b) => write!(f, "{b}"),
             Self::Number(n) => {
                 if n.trunc().eq(n) {
-                    write!(f, "{:.0?}", n)
+                    write!(f, "{n:.0?}")
                 } else {
-                    write!(f, "{:?}", n)
+                    write!(f, "{n:?}")
                 }
             }
             Self::Str(s) => write!(f, "{}", intern::str(*s)),
-            Self::String(s) => write!(f, "{}", s),
-            Self::NativeFun(fun) => write!(f, "{}", fun),
-            Self::Closure(c) => write!(f, "{}", c),
-            Self::Fun(fun) => write!(f, "{}", fun),
+            Self::String(s) => write!(f, "{s}"),
+            Self::NativeFun(fun) => write!(f, "{fun}"),
+            Self::Closure(c) => write!(f, "{c}"),
+            Self::Fun(fun) => write!(f, "{fun}"),
             Self::Class(c) => write!(f, "{}", c.borrow()),
             Self::Instance(i) => write!(f, "{}", i.borrow()),
-            Self::BoundMethod(m) => write!(f, "{}", m),
+            Self::BoundMethod(m) => write!(f, "{m}"),
         }
     }
 }

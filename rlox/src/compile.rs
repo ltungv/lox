@@ -149,7 +149,7 @@ impl<'a> Compiler<'a> {
         let fun = self.closure_level_pop().fun;
 
         #[cfg(debug_assertions)]
-        disassemble_chunk(&fun.chunk, format!("{}", fun).as_str());
+        disassemble_chunk(&fun.chunk, format!("{fun}").as_str());
 
         Some(fun)
     }
@@ -209,7 +209,7 @@ impl<'a> Compiler<'a> {
         let upvalues = level.upvalues;
 
         #[cfg(debug_assertions)]
-        disassemble_chunk(&fun.chunk, format!("{}", fun).as_str());
+        disassemble_chunk(&fun.chunk, format!("{fun}").as_str());
 
         let fun = Rc::new(fun);
         let const_id = self.make_const(Value::Fun(fun));
@@ -857,7 +857,7 @@ impl<'a> Compiler<'a> {
         loop {
             match self.scanner.scan() {
                 Err(err) => {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                     self.had_error = true;
                     self.panic = true;
                 }
@@ -994,9 +994,9 @@ impl<'a> Compiler<'a> {
         self.panic = true;
 
         if lexeme.is_empty() {
-            eprintln!("{} Error at end: {}.", pos, message)
+            eprintln!("{pos} Error at end: {message}.")
         } else {
-            eprintln!("{} Error at '{}': {}.", pos, lexeme, message)
+            eprintln!("{pos} Error at '{lexeme}': {message}.")
         }
     }
 }

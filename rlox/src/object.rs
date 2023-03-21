@@ -136,7 +136,7 @@ impl fmt::Display for ObjFun {
         if name_str.is_empty() {
             write!(f, "<script>")
         } else {
-            write!(f, "<fn {}>", name_str)
+            write!(f, "<fn {name_str}>")
         }
     }
 }

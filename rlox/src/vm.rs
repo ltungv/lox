@@ -16,7 +16,7 @@ fn print_stack(stack: &[Value]) {
     // print stack trace
     print!("          ");
     for val in stack {
-        print!("[ {} ]", val);
+        print!("[ {val} ]");
     }
     println!();
 }
@@ -171,7 +171,7 @@ impl VM {
             self.run()
         }()
         .map_err(|err| {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             self.print_stack_trace();
             self.reset_stack();
             Error::Runtime
@@ -184,7 +184,7 @@ impl VM {
             #[cfg(debug_assertions)]
             {
                 print_stack(&self.stack);
-                disassemble_instruction(&self.frame().closure.fun.chunk, self.frame().ip as usize);
+                disassemble_instruction(&self.frame().closure.fun.chunk, self.frame().ip);
             }
 
             let opcode = self.next_instruction().clone();
@@ -239,7 +239,7 @@ impl VM {
                     let slot = *slot as usize;
                     let upvalue = Rc::clone(&self.frame().closure.upvalues[slot]);
                     let value = match &*upvalue.borrow() {
-                        ObjUpvalue::Open(loc) => self.stack[*loc as usize].clone(),
+                        ObjUpvalue::Open(loc) => self.stack[*loc].clone(),
                         ObjUpvalue::Closed(val) => val.clone(),
                     };
                     self.push(value)?;
@@ -249,7 +249,7 @@ impl VM {
                     let slot = *slot as usize;
                     let upvalue = Rc::clone(&self.frame().closure.upvalues[slot]);
                     match &mut *upvalue.borrow_mut() {
-                        ObjUpvalue::Open(loc) => self.stack[*loc as usize] = value,
+                        ObjUpvalue::Open(loc) => self.stack[*loc] = value,
                         ObjUpvalue::Closed(val) => *val = value,
                     };
                 }
@@ -332,7 +332,7 @@ impl VM {
                 }
                 OpCode::Print => {
                     let v = self.pop();
-                    println!("{}", v);
+                    println!("{v}");
                 }
                 OpCode::Jump(ref offset) => {
                     self.frame_mut().ip += *offset as usize;
@@ -533,8 +533,7 @@ impl VM {
 
         match class.borrow().methods.get(&self.init_string) {
             None if argc != 0 => Err(RuntimeError(format!(
-                "Expected 0 arguments but got {}",
-                argc
+                "Expected 0 arguments but got {argc}"
             ))),
             Some(init) => self.call_closure(Rc::clone(init.as_closure()), argc),
             _ => Ok(()),
@@ -580,7 +579,7 @@ impl VM {
         let frame = self.frame_mut();
         let (opcode, _) = frame.closure.fun.chunk.read_instruction(frame.ip);
         frame.ip += 1;
-        &opcode
+        opcode
     }
 
     fn read_const(&self, idx: usize) -> &Value {
@@ -635,9 +634,9 @@ impl VM {
             let (_, pos) = frame.closure.fun.chunk.read_instruction(frame.ip - 1);
             let fname = intern::str(frame.closure.fun.name);
             if fname.is_empty() {
-                eprintln!("{} in script.", pos);
+                eprintln!("{pos} in script.");
             } else {
-                eprintln!("{} in {}().", pos, fname);
+                eprintln!("{pos} in {fname}().");
             }
         }
     }
