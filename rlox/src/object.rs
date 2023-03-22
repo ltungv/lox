@@ -8,7 +8,7 @@ use crate::{gc::Gc, intern, Chunk, StrId, Value};
 #[derive(Debug, Clone)]
 pub enum Object {
     /// A heap allocated string
-    String(Gc<Box<str>>),
+    String(Gc<str>),
     /// A closure that can captured surrounding variables
     Closure(Gc<ObjClosure>),
     /// A function object

@@ -1,5 +1,4 @@
-use std::ops;
-use std::{cell::RefCell, fmt};
+use std::{cell::RefCell, fmt, ops};
 
 use crate::{
     gc::Gc, intern, ObjClass, ObjClosure, ObjFun, ObjInstance, Object, RuntimeError, StrId,
@@ -49,19 +48,19 @@ impl ops::Add for &Value {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
             (Value::Str(s1), Value::Str(s2)) => {
                 let res = intern::str(*s1) + intern::str(*s2).as_str();
-                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
+                Ok(Value::Object(Object::String(Gc::from(res))))
             }
             (Value::Object(Object::String(s1)), Value::Str(s2)) => {
-                let res = s1.as_ref().to_string() + intern::str(*s2).as_str();
-                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
+                let res = s1.to_string() + intern::str(*s2).as_str();
+                Ok(Value::Object(Object::String(Gc::from(res))))
             }
             (Value::Str(s1), Value::Object(Object::String(s2))) => {
-                let res = intern::str(*s1) + s2.as_ref();
-                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
+                let res = intern::str(*s1) + s2;
+                Ok(Value::Object(Object::String(Gc::from(res))))
             }
             (Value::Object(Object::String(s1)), Value::Object(Object::String(s2))) => {
-                let res = s1.as_ref().to_string() + s2.as_ref();
-                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
+                let res = s1.to_string() + s2;
+                Ok(Value::Object(Object::String(Gc::from(res))))
             }
             _ => Err(RuntimeError(
                 "Operands must be two numbers or two strings".to_string(),
