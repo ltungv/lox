@@ -6,13 +6,13 @@
 mod chunk;
 mod compile;
 mod error;
+mod gc;
+mod intern;
 mod object;
 mod scan;
 mod token;
 mod value;
 mod vm;
-
-mod intern;
 
 pub use chunk::*;
 pub use compile::*;

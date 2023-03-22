@@ -1,8 +1,6 @@
-use std::rc::Rc;
-
 use crate::{
-    intern, token, Chunk, ObjFun, OpCode, Position, Scanner, StrId, Token, Value,
-    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_UPVALUES, Object,
+    gc::Gc, intern, token, Chunk, ObjFun, Object, OpCode, Position, Scanner, StrId, Token, Value,
+    MAX_CHUNK_CONSTANTS, MAX_LOCAL_VARIABLES, MAX_PARAMS, MAX_UPVALUES,
 };
 
 #[cfg(debug_assertions)]
@@ -211,7 +209,7 @@ impl<'a> Compiler<'a> {
         #[cfg(debug_assertions)]
         disassemble_chunk(&fun.chunk, format!("{fun}").as_str());
 
-        let fun = Rc::new(fun);
+        let fun = Gc::new(fun);
         let const_id = self.make_const(Value::Object(Object::Fun(fun)));
         self.emit(OpCode::Closure(const_id, upvalues));
     }

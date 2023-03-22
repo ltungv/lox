@@ -1,7 +1,9 @@
 use std::ops;
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{cell::RefCell, fmt};
 
-use crate::{intern, ObjClass, ObjClosure, ObjFun, ObjInstance, Object, RuntimeError, StrId};
+use crate::{
+    gc::Gc, intern, ObjClass, ObjClosure, ObjFun, ObjInstance, Object, RuntimeError, StrId,
+};
 
 /// This represents a Lox type and its data at.
 #[derive(Debug, Clone)]
@@ -46,20 +48,20 @@ impl ops::Add for &Value {
         match (self, rhs) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
             (Value::Str(s1), Value::Str(s2)) => {
-                let res = Rc::from(intern::str(*s1) + intern::str(*s2).as_str());
-                Ok(Value::Object(Object::String(res)))
+                let res = intern::str(*s1) + intern::str(*s2).as_str();
+                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
             }
             (Value::Object(Object::String(s1)), Value::Str(s2)) => {
-                let res = Rc::from(s1.as_ref().to_string() + intern::str(*s2).as_str());
-                Ok(Value::Object(Object::String(res)))
+                let res = s1.as_ref().to_string() + intern::str(*s2).as_str();
+                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
             }
             (Value::Str(s1), Value::Object(Object::String(s2))) => {
-                let res = Rc::from(intern::str(*s1) + s2.as_ref());
-                Ok(Value::Object(Object::String(res)))
+                let res = intern::str(*s1) + s2.as_ref();
+                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
             }
             (Value::Object(Object::String(s1)), Value::Object(Object::String(s2))) => {
-                let res = Rc::from(s1.as_ref().to_string() + s2.as_ref());
-                Ok(Value::Object(Object::String(res)))
+                let res = s1.as_ref().to_string() + s2.as_ref();
+                Ok(Value::Object(Object::String(Gc::new(res.into_boxed_str()))))
             }
             _ => Err(RuntimeError(
                 "Operands must be two numbers or two strings".to_string(),
@@ -136,16 +138,16 @@ impl PartialEq for Value {
             (Self::Object(Object::String(s1)), Self::Str(s2)) => s1.as_ref() == intern::str(*s2),
             (Self::Object(Object::String(s1)), Self::Object(Object::String(s2))) => s1 == s2,
             (Self::Object(Object::Closure(c1)), Self::Object(Object::Closure(c2))) => {
-                Rc::ptr_eq(c1, c2)
+                Gc::ptr_eq(c1, c2)
             }
-            (Self::Object(Object::Fun(f1)), Self::Object(Object::Fun(f2))) => Rc::ptr_eq(f1, f2),
+            (Self::Object(Object::Fun(f1)), Self::Object(Object::Fun(f2))) => Gc::ptr_eq(f1, f2),
             (Self::Object(Object::Class(c1)), Self::Object(Object::Class(c2))) => {
-                Rc::ptr_eq(c1, c2)
+                Gc::ptr_eq(c1, c2)
             }
             (Self::Object(Object::Instance(i1)), Self::Object(Object::Instance(i2))) => {
                 let i1 = i1.borrow();
                 let i2 = i2.borrow();
-                if !Rc::ptr_eq(&i1.class, &i2.class) {
+                if !Gc::ptr_eq(&i1.class, &i2.class) {
                     return false;
                 }
                 if i1.fields.len() != i2.fields.len() {
@@ -162,7 +164,7 @@ impl PartialEq for Value {
                 true
             }
             (Self::Object(Object::BoundMethod(b1)), Self::Object(Object::BoundMethod(b2))) => {
-                Rc::ptr_eq(b1, b2)
+                Gc::ptr_eq(b1, b2)
             }
             _ => false,
         }
@@ -204,7 +206,7 @@ impl Value {
     }
 
     /// Cast the value as a closure object
-    pub fn as_closure(&self) -> &Rc<ObjClosure> {
+    pub fn as_closure(&self) -> &Gc<ObjClosure> {
         if let Value::Object(Object::Closure(closure)) = self {
             closure
         } else {
@@ -213,7 +215,7 @@ impl Value {
     }
 
     /// Cast the value as a function object
-    pub fn as_fun(&self) -> &Rc<ObjFun> {
+    pub fn as_fun(&self) -> &Gc<ObjFun> {
         if let Value::Object(Object::Fun(fun)) = self {
             fun
         } else {
@@ -222,7 +224,7 @@ impl Value {
     }
 
     /// Cast the value as a class object
-    pub fn as_class(&self) -> &Rc<RefCell<ObjClass>> {
+    pub fn as_class(&self) -> &Gc<RefCell<ObjClass>> {
         if let Value::Object(Object::Class(class)) = self {
             class
         } else {
@@ -231,7 +233,7 @@ impl Value {
     }
 
     /// Cast the value as a instance object
-    pub fn as_instance(&self) -> &Rc<RefCell<ObjInstance>> {
+    pub fn as_instance(&self) -> &Gc<RefCell<ObjInstance>> {
         if let Value::Object(Object::Instance(instance)) = self {
             instance
         } else {

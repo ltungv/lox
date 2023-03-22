@@ -1,24 +1,24 @@
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{cell::RefCell, fmt};
 
 use rustc_hash::FxHashMap;
 
-use crate::{intern, Chunk, StrId, Value};
+use crate::{gc::Gc, intern, Chunk, StrId, Value};
 
 /// Enumeration of heap-allocated object type.
 #[derive(Debug, Clone)]
 pub enum Object {
     /// A heap allocated string
-    String(Rc<str>),
+    String(Gc<Box<str>>),
     /// A closure that can captured surrounding variables
-    Closure(Rc<ObjClosure>),
+    Closure(Gc<ObjClosure>),
     /// A function object
-    Fun(Rc<ObjFun>),
+    Fun(Gc<ObjFun>),
     /// A class object
-    Class(Rc<RefCell<ObjClass>>),
+    Class(Gc<RefCell<ObjClass>>),
     /// A class instance
-    Instance(Rc<RefCell<ObjInstance>>),
+    Instance(Gc<RefCell<ObjInstance>>),
     /// A class instance
-    BoundMethod(Rc<ObjBoundMethod>),
+    BoundMethod(Gc<ObjBoundMethod>),
 }
 
 impl fmt::Display for Object {
@@ -38,14 +38,14 @@ impl fmt::Display for Object {
 #[derive(Debug)]
 pub struct ObjInstance {
     /// The class type of this instance
-    pub class: Rc<RefCell<ObjClass>>,
+    pub class: Gc<RefCell<ObjClass>>,
     /// The fields that this instance stores
     pub fields: FxHashMap<StrId, Value>,
 }
 
 impl ObjInstance {
     /// Create a new instance of the given class.
-    pub fn new(class: Rc<RefCell<ObjClass>>) -> Self {
+    pub fn new(class: Gc<RefCell<ObjClass>>) -> Self {
         Self {
             class,
             fields: FxHashMap::default(),
@@ -90,12 +90,12 @@ pub struct ObjBoundMethod {
     /// Bound instance
     pub receiver: Value,
     /// The closure object of the method
-    pub method: Rc<ObjClosure>,
+    pub method: Gc<ObjClosure>,
 }
 
 impl ObjBoundMethod {
     /// Create a new method bound to the given receiver
-    pub fn new(receiver: Value, method: Rc<ObjClosure>) -> Self {
+    pub fn new(receiver: Value, method: Gc<ObjClosure>) -> Self {
         Self { receiver, method }
     }
 }
@@ -119,9 +119,9 @@ pub enum ObjUpvalue {
 #[derive(Debug)]
 pub struct ObjClosure {
     /// The base function of this closure
-    pub fun: Rc<ObjFun>,
+    pub fun: Gc<ObjFun>,
     /// Upvalues for indirect access to closed-over variables
-    pub upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
+    pub upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
 }
 
 impl fmt::Display for ObjClosure {
@@ -132,7 +132,7 @@ impl fmt::Display for ObjClosure {
 
 impl ObjClosure {
     /// Create a new closure of the function that captures the variables specified in the list of upvalues
-    pub fn new(fun: Rc<ObjFun>, upvalues: Vec<Rc<RefCell<ObjUpvalue>>>) -> Self {
+    pub fn new(fun: Gc<ObjFun>, upvalues: Vec<Gc<RefCell<ObjUpvalue>>>) -> Self {
         Self { fun, upvalues }
     }
 }

@@ -1,8 +1,9 @@
+use std::cell::RefCell;
 use std::ops::{Add, Div, Mul, Neg, Not, Sub};
-use std::{cell::RefCell, rc::Rc};
 
 use rustc_hash::FxHashMap;
 
+use crate::gc::Gc;
 use crate::{
     intern, Compiler, Error, NativeFun, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance,
     ObjUpvalue, Object, RuntimeError, StrId, Upvalue, Value, MAX_FRAMES, MAX_STACK,
@@ -126,7 +127,7 @@ fn clock_native(_args: &[Value]) -> Value {
 
 #[derive(Debug)]
 struct CallFrame {
-    closure: Rc<ObjClosure>,
+    closure: Gc<ObjClosure>,
     ip: usize,
     slot: usize,
 }
@@ -136,7 +137,7 @@ struct CallFrame {
 pub struct VM {
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
-    open_upvalues: Vec<Rc<RefCell<ObjUpvalue>>>,
+    open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     globals: FxHashMap<StrId, Value>,
     init_string: StrId,
 }
@@ -162,11 +163,11 @@ impl VM {
         compiler.compile();
 
         let fun = compiler.finish().ok_or(Error::Compile)?;
-        let fun = Rc::new(fun);
+        let fun = Gc::new(fun);
 
         || -> Result<(), RuntimeError> {
-            let closure = Rc::new(ObjClosure::new(fun, Vec::new()));
-            self.push(Value::Object(Object::Closure(Rc::clone(&closure))))?;
+            let closure = Gc::new(ObjClosure::new(fun, Vec::new()));
+            self.push(Value::Object(Object::Closure(Gc::clone(&closure))))?;
             self.call_closure(closure, 0)?;
             self.run()
         }()
@@ -237,7 +238,7 @@ impl VM {
                 }
                 OpCode::GetUpvalue(ref slot) => {
                     let slot = *slot as usize;
-                    let upvalue = Rc::clone(&self.frame().closure.upvalues[slot]);
+                    let upvalue = Gc::clone(&self.frame().closure.upvalues[slot]);
                     let value = match &*upvalue.borrow() {
                         ObjUpvalue::Open(loc) => self.stack[*loc].clone(),
                         ObjUpvalue::Closed(val) => val.clone(),
@@ -247,7 +248,7 @@ impl VM {
                 OpCode::SetUpvalue(ref slot) => {
                     let value = self.peek(0).clone();
                     let slot = *slot as usize;
-                    let upvalue = Rc::clone(&self.frame().closure.upvalues[slot]);
+                    let upvalue = Gc::clone(&self.frame().closure.upvalues[slot]);
                     match &mut *upvalue.borrow_mut() {
                         ObjUpvalue::Open(loc) => self.stack[*loc] = value,
                         ObjUpvalue::Closed(val) => *val = value,
@@ -258,14 +259,14 @@ impl VM {
                     if !instance.is_instance() {
                         return Err(RuntimeError("Only instances have properties".to_string()));
                     }
-                    let instance = Rc::clone(instance.as_instance());
+                    let instance = Gc::clone(instance.as_instance());
                     let prop_name = *self.read_const(*const_id as usize).as_str();
                     match instance.borrow().fields.get(&prop_name) {
                         Some(val) => {
                             self.pop();
                             self.push(val.clone())?;
                         }
-                        None => self.bind_method(Rc::clone(&instance.borrow().class), prop_name)?,
+                        None => self.bind_method(Gc::clone(&instance.borrow().class), prop_name)?,
                     };
                 }
                 OpCode::SetProperty(ref const_id) => {
@@ -285,7 +286,7 @@ impl VM {
                 OpCode::GetSuper(ref const_id) => {
                     let name = *self.read_const(*const_id as usize).as_str();
                     let superclass = self.pop();
-                    self.bind_method(Rc::clone(superclass.as_class()), name)?;
+                    self.bind_method(Gc::clone(superclass.as_class()), name)?;
                 }
                 OpCode::Equal => {
                     let v2 = self.pop();
@@ -355,18 +356,18 @@ impl VM {
                 OpCode::SuperInvoke(ref const_id, ref argc) => {
                     let method = *self.read_const(*const_id as usize).as_str();
                     let superclass = self.pop();
-                    self.invoke_from_class(Rc::clone(superclass.as_class()), method, *argc)?;
+                    self.invoke_from_class(Gc::clone(superclass.as_class()), method, *argc)?;
                 }
                 OpCode::Closure(ref fun_idx, ref upvalues) => {
-                    let fun = Rc::clone(self.read_const(*fun_idx as usize).as_fun());
+                    let fun = Gc::clone(self.read_const(*fun_idx as usize).as_fun());
                     let upvalues = upvalues.iter().map(|upvalue| {
                         if upvalue.is_local {
                             self.capture_upvalue(self.frame().slot + upvalue.index as usize)
                         } else {
-                            Rc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
+                            Gc::clone(&self.frame().closure.upvalues[upvalue.index as usize])
                         }
                     });
-                    let closure = Rc::new(ObjClosure::new(fun, upvalues.collect()));
+                    let closure = Gc::new(ObjClosure::new(fun, upvalues.collect()));
                     self.push(Value::Object(Object::Closure(closure)))?;
                 }
                 OpCode::CloseUpvalue => {
@@ -386,13 +387,13 @@ impl VM {
                 }
                 OpCode::Class(ref const_id) => {
                     let name = self.read_const(*const_id as usize).as_str();
-                    let class = Rc::new(RefCell::new(ObjClass::new(*name)));
+                    let class = Gc::new(RefCell::new(ObjClass::new(*name)));
                     self.push(Value::Object(Object::Class(class)))?;
                 }
                 OpCode::Inherit => {
                     let subclass = self.pop();
                     let superclass = if self.peek(0).is_class() {
-                        Rc::clone(self.peek(0).as_class())
+                        Gc::clone(self.peek(0).as_class())
                     } else {
                         return Err(RuntimeError("Superclass must be a class".to_string()));
                     };
@@ -417,7 +418,7 @@ impl VM {
     }
 
     fn invoke(&mut self, name: StrId, argc: u8) -> Result<(), RuntimeError> {
-        let receiver = Rc::clone(self.peek(argc as usize).as_instance());
+        let receiver = Gc::clone(self.peek(argc as usize).as_instance());
         let receiver = receiver.borrow();
 
         match receiver.fields.get(&name) {
@@ -425,13 +426,13 @@ impl VM {
                 *self.peek_mut(argc as usize) = value.clone();
                 self.call_value(value.clone(), argc)
             }
-            None => self.invoke_from_class(Rc::clone(&receiver.class), name, argc),
+            None => self.invoke_from_class(Gc::clone(&receiver.class), name, argc),
         }
     }
 
     fn invoke_from_class(
         &mut self,
-        class: Rc<RefCell<ObjClass>>,
+        class: Gc<RefCell<ObjClass>>,
         name: StrId,
         argc: u8,
     ) -> Result<(), RuntimeError> {
@@ -440,7 +441,7 @@ impl VM {
             .methods
             .get(&name)
             .ok_or_else(|| RuntimeError(format!("Undefined property '{}'", intern::str(name))))?;
-        let method = Rc::clone(method.as_closure());
+        let method = Gc::clone(method.as_closure());
         self.call_closure(method, argc)
     }
 
@@ -449,23 +450,23 @@ impl VM {
             Value::NativeFun(f) => self.call_native(f, argc),
             Value::Object(Object::Closure(c)) => self.call_closure(c, argc),
             Value::Object(Object::Class(c)) => self.call_class(c, argc),
-            Value::Object(Object::BoundMethod(m)) => self.call_bound_method(Rc::clone(&m), argc),
+            Value::Object(Object::BoundMethod(m)) => self.call_bound_method(Gc::clone(&m), argc),
             _ => Err(RuntimeError(
                 "Can only call functions and classes".to_string(),
             )),
         }
     }
 
-    fn capture_upvalue(&mut self, location: usize) -> Rc<RefCell<ObjUpvalue>> {
+    fn capture_upvalue(&mut self, location: usize) -> Gc<RefCell<ObjUpvalue>> {
         for upvalue in self.open_upvalues.iter() {
             if let ObjUpvalue::Open(loc) = *upvalue.borrow() {
                 if loc == location {
-                    return Rc::clone(upvalue);
+                    return Gc::clone(upvalue);
                 }
             }
         }
-        let upvalue = Rc::new(RefCell::new(ObjUpvalue::Open(location)));
-        self.open_upvalues.push(Rc::clone(&upvalue));
+        let upvalue = Gc::new(RefCell::new(ObjUpvalue::Open(location)));
+        self.open_upvalues.push(Gc::clone(&upvalue));
         upvalue
     }
 
@@ -485,7 +486,7 @@ impl VM {
             .retain(|v| matches!(*v.borrow(), ObjUpvalue::Open(_)))
     }
 
-    fn call_closure(&mut self, closure: Rc<ObjClosure>, argc: u8) -> Result<(), RuntimeError> {
+    fn call_closure(&mut self, closure: Gc<ObjClosure>, argc: u8) -> Result<(), RuntimeError> {
         if argc != closure.fun.arity {
             return Err(RuntimeError(format!(
                 "Expected {} arguments but got {}",
@@ -527,43 +528,43 @@ impl VM {
             .insert(name, Value::NativeFun(NativeFun { name, arity, call }));
     }
 
-    fn call_class(&mut self, class: Rc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
-        *self.peek_mut(argc as usize) = Value::Object(Object::Instance(Rc::new(RefCell::new(
-            ObjInstance::new(Rc::clone(&class)),
+    fn call_class(&mut self, class: Gc<RefCell<ObjClass>>, argc: u8) -> Result<(), RuntimeError> {
+        *self.peek_mut(argc as usize) = Value::Object(Object::Instance(Gc::new(RefCell::new(
+            ObjInstance::new(Gc::clone(&class)),
         ))));
 
         match class.borrow().methods.get(&self.init_string) {
             None if argc != 0 => Err(RuntimeError(format!("Expected 0 arguments but got {argc}"))),
-            Some(init) => self.call_closure(Rc::clone(init.as_closure()), argc),
+            Some(init) => self.call_closure(Gc::clone(init.as_closure()), argc),
             _ => Ok(()),
         }
     }
 
     fn call_bound_method(
         &mut self,
-        bound: Rc<ObjBoundMethod>,
+        bound: Gc<ObjBoundMethod>,
         argc: u8,
     ) -> Result<(), RuntimeError> {
         *self.peek_mut(argc as usize) = bound.receiver.clone();
-        self.call_closure(Rc::clone(&bound.method), argc)
+        self.call_closure(Gc::clone(&bound.method), argc)
     }
 
     fn define_method(&mut self, name: StrId) {
         let method = self.pop();
-        let class = Rc::clone(self.peek(0).as_class());
+        let class = Gc::clone(self.peek(0).as_class());
         class.borrow_mut().methods.insert(name, method);
     }
 
     fn bind_method(
         &mut self,
-        class: Rc<RefCell<ObjClass>>,
+        class: Gc<RefCell<ObjClass>>,
         name: StrId,
     ) -> Result<(), RuntimeError> {
         match class.borrow().methods.get(&name) {
             Some(val) => {
-                let method = Rc::clone(val.as_closure());
-                let instance = Rc::clone(self.pop().as_instance());
-                let bound = Rc::new(ObjBoundMethod::new(
+                let method = Gc::clone(val.as_closure());
+                let instance = Gc::clone(self.pop().as_instance());
+                let bound = Gc::new(ObjBoundMethod::new(
                     Value::Object(Object::Instance(instance)),
                     method,
                 ));
