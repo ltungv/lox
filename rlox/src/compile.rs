@@ -98,7 +98,7 @@ pub enum FunType {
 ///              | "this" | "super" "." IDENT
 ///              | "true" | "false" | "nil"
 ///              | "(" expr ")" ;
-///
+/// ```
 #[derive(Debug)]
 pub struct Compiler<'a> {
     scanner: Scanner<'a>,
