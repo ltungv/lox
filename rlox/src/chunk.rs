@@ -1,6 +1,9 @@
 use crate::{OpCode, Position, Value};
 
-/// A chunk holds a sequence of instructions to be executes and their data
+/// Chunk is a sequence of instructions and data that will be written to by the compiler
+/// and later run by the virtual-machine.
+///
+/// # Examples
 ///
 /// ```
 /// use rlox::{Chunk, OpCode, Position, Value};
@@ -146,7 +149,9 @@ pub fn disassemble_instruction(chunk: &Chunk, inst_idx: usize) {
         OpCode::Print => println!("OP_PRINT"),
         OpCode::Call(ref idx) => byte_instruction("OP_CALL", *idx),
         OpCode::Invoke(ref idx, ref argc) => invoke_instruction("OP_INVOKE", *idx, *argc),
-        OpCode::SuperInvoke(ref idx, ref argc) => invoke_instruction("OP_SUPER_INVOKE", *idx, *argc),
+        OpCode::SuperInvoke(ref idx, ref argc) => {
+            invoke_instruction("OP_SUPER_INVOKE", *idx, *argc)
+        }
         OpCode::Closure(ref const_id, ref upvalues) => {
             let value = chunk.read_const(*const_id as usize);
             println!("{:-16} {:4} {}", "OP_CLOSURE", const_id, value);

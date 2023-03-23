@@ -1078,10 +1078,6 @@ impl From<(StrId, usize, bool)> for Local {
     }
 }
 
-/// Chunk is a sequence of instructions and data that will be written to by the compiler
-/// and later run by the virtual-machine.
-///
-/// # Examples
 /// All precedence levels in Lox
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
