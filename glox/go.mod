@@ -1,4 +1,4 @@
-module github.com/letung3105/lox/glox
+module github.com/ltungv/lox/glox
 
 go 1.16
 

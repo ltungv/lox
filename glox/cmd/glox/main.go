@@ -8,7 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/letung3105/lox/glox/internal/lox"
+	"github.com/ltungv/lox/glox/internal/lox"
 )
 
 func main() {
